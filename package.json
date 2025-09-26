@@ -1,7 +1,8 @@
 {
   "name": "crm-beauty-backend",
   "version": "1.0.0",
-  "description": "Backend API для системы управления салоном красоты",
+  "type": "module",
+  "description": "Backend API for beauty salon management system",
   "main": "dist/index.js",
   "scripts": {
     "dev": "nodemon src/index.ts",
