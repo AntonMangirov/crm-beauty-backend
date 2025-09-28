@@ -1,7 +1,6 @@
 {
   "name": "crm-beauty-backend",
   "version": "1.0.0",
-  "type": "module",
   "description": "Backend API for beauty salon management system",
   "main": "dist/index.js",
   "scripts": {
