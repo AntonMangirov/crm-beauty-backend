@@ -3,6 +3,7 @@ import prisma from '../prismaClient';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { slugifyName } from '../utils/slug';
+import '../types/express';
 
 const SALT_ROUNDS = 10;
 
