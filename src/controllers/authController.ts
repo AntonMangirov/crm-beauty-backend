@@ -1,11 +1,19 @@
 import { Request, Response } from 'express';
 import prisma from '../prismaClient';
-import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { slugifyName } from '../utils/slug';
-import '../types/express';
+import { hashPassword, verifyPassword } from '../utils/password';
 
-const SALT_ROUNDS = 10;
+// Расширяем тип Request для добавления user
+declare global {
+  namespace Express {
+    interface Request {
+      user?: { id: string };
+    }
+  }
+}
+
+// Удаляем SALT_ROUNDS, теперь используем новую систему паролей
 
 export async function register(req: Request, res: Response) {
   try {
@@ -20,7 +28,7 @@ export async function register(req: Request, res: Response) {
     const existing = await prisma.user.findUnique({ where: { email } });
     if (existing) return res.status(400).json({ error: 'User already exists' });
 
-    const passwordHash = await bcrypt.hash(password, SALT_ROUNDS);
+    const passwordHash = await hashPassword(password);
 
     // генерируем базовый slug и делаем уникальным при необходимости
     const baseSlug = slugifyName(name);
@@ -65,7 +73,7 @@ export async function login(req: Request, res: Response) {
     const user = await prisma.user.findUnique({ where: { email } });
     if (!user) return res.status(401).json({ error: 'Invalid credentials' });
 
-    const ok = await bcrypt.compare(password, user.passwordHash);
+    const ok = await verifyPassword(password, user.passwordHash);
     if (!ok) return res.status(401).json({ error: 'Invalid credentials' });
 
     const token = jwt.sign(

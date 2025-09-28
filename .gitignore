@@ -3,6 +3,7 @@ node_modules/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+lerna-debug.log*
 
 # Environment variables
 .env
@@ -14,17 +15,89 @@ yarn-error.log*
 # Build outputs
 dist/
 build/
+out/
 *.tsbuildinfo
 
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
+# Database
+*.db
+*.sqlite
+*.sqlite3
 
-# OS
+# Prisma
+prisma/migrations/
+# prisma/generated/ # Uncomment if using custom generated client
+
+# Testing
+coverage/
+.nyc_output/
+test-results/
+playwright-report/
+test-results.xml
+
+# Production features (development only)
+# Uncomment when moving files to production
+# src/features/production/
+
+# Email templates and queues (if generated)
+# src/templates/
+# src/queues/
+
+# Docker
+docker-compose.override.yml
+
+# PM2
+.pm2/
+
+# Vercel
+.vercel
+
+# Serverless
+.serverless/
+
+# AWS
+.aws/
+
+# Terraform
+*.tfstate
+*.tfstate.*
+.terraform/
+
+# Kubernetes
+*.kubeconfig
+
+# Local development
+.local/
+local/
+
+# Backup files
+*.backup
+*.bak
+*.tmp
+
+# IDE specific
+.vscode/settings.json
+.vscode/launch.json
+.vscode/extensions.json
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# OS generated files
 .DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
 Thumbs.db
+
+# Security
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
 
 # Logs
 logs/
@@ -39,9 +112,6 @@ pids/
 # Coverage directory used by tools like istanbul
 coverage/
 *.lcov
-
-# nyc test coverage
-.nyc_output
 
 # Dependency directories
 jspm_packages/
@@ -67,30 +137,16 @@ jspm_packages/
 # Yarn Integrity file
 .yarn-integrity
 
-# dotenv environment variables file
-.env.test
-
-# parcel-bundler cache (https://parceljs.org/)
-.cache
-.parcel-cache
-
-# Next.js build output
-.next
-
-# Nuxt.js build / generate output
-.nuxt
-
-# Gatsby files
-.cache/
-public
-
-# Storybook build outputs
-.out
-.storybook-out
-
 # Temporary folders
 tmp/
 temp/
 
-# Prisma
-prisma/migrations/
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db

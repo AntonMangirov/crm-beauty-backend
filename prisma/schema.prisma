@@ -18,7 +18,6 @@ model User {
   photoUrl      String?
   address       String?
   isActive      Boolean       @default(true)
-  isVerified    Boolean       @default(false)
   role          UserRole      @default(MASTER)
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt

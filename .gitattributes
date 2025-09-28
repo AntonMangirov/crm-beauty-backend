@@ -1,0 +1,57 @@
+# Auto detect text files and perform LF normalization
+* text=auto
+
+# Source code
+*.ts text eol=lf
+*.js text eol=lf
+*.json text eol=lf
+*.md text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+
+# Configuration files
+*.config.js text eol=lf
+*.config.ts text eol=lf
+.gitignore text eol=lf
+.gitattributes text eol=lf
+
+# Package files
+package.json text eol=lf
+package-lock.json text eol=lf
+yarn.lock text eol=lf
+
+# Documentation
+README.md text eol=lf
+CHANGELOG.md text eol=lf
+LICENSE text eol=lf
+
+# Prisma
+prisma/schema.prisma text eol=lf
+
+# Environment files (should be ignored but just in case)
+.env* text eol=lf
+
+# Binary files
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.svg text eol=lf
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.eot binary
+
+# Archives
+*.zip binary
+*.tar.gz binary
+*.tgz binary
+*.rar binary
+*.7z binary
+
+# Executables
+*.exe binary
+*.dll binary
+*.so binary
+*.dylib binary

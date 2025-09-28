@@ -4,6 +4,7 @@ import { auth } from '../middleware/auth';
 
 const router = Router();
 
+// Базовые маршруты аутентификации (без rate limiting для разработки)
 router.post('/register', register);
 router.post('/login', login);
 router.get('/me', auth, me);
