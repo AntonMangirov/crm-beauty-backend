@@ -79,7 +79,7 @@ export async function bookPublicSlot(req: Request, res: Response) {
     const service = await prisma.service.findFirst({
       where: { id: serviceId, masterId: master.id, isActive: true },
     });
-    if (!service) return res.status(404).json({ error: 'Service not found' });
+    if (!service) return res.status(400).json({ error: 'Service not found' });
 
     const start = new Date(startAt);
     const end = addMinutes(start, service.durationMin);

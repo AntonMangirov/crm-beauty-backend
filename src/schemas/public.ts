@@ -16,6 +16,9 @@ export const PublicProfileResponseSchema = z.object({
 });
 export type PublicProfileResponse = z.infer<typeof PublicProfileResponseSchema>;
 
+export const SlugParamSchema = z.object({ slug: z.string().min(1) });
+export type SlugParams = z.infer<typeof SlugParamSchema>;
+
 export const BookingRequestSchema = z.object({
   name: z.string().min(1).max(100),
   phone: z.string().min(5).max(32),
