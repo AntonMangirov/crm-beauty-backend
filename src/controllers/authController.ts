@@ -30,14 +30,25 @@ export async function register(req: Request, res: Response) {
 
     const passwordHash = await hashPassword(password);
 
-    // генерируем базовый slug и делаем уникальным при необходимости
+    // Генерируем slug вида: name-lowercase-123 (всегда с 3-значным суффиксом)
     const baseSlug = slugifyName(name);
-    let slug = baseSlug;
-    let i = 0;
-    while (await prisma.user.findUnique({ where: { slug } })) {
-      i += 1;
-      slug = `${baseSlug}-${i}`;
-      if (i > 100) break; // страховка
+    let slug = '';
+    let attempts = 0;
+    while (attempts < 20) {
+      const suffix = String(Math.floor(100 + Math.random() * 900)); // 100-999
+      const candidate = `${baseSlug}-${suffix}`;
+      const exists = await prisma.user.findUnique({
+        where: { slug: candidate },
+      });
+      if (!exists) {
+        slug = candidate;
+        break;
+      }
+      attempts += 1;
+    }
+    // Фоллбек на случай экстремальных коллизий
+    if (!slug) {
+      slug = `${baseSlug}-${Date.now().toString().slice(-3)}`;
     }
 
     const user = await prisma.user.create({
