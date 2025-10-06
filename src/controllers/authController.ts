@@ -2,6 +2,12 @@ import { Request, Response } from 'express';
 import prisma from '../prismaClient';
 import jwt from 'jsonwebtoken';
 import { slugifyName } from '../utils/slug';
+import {
+  RegisterRequestSchema,
+  RegisterResponseSchema,
+  LoginRequestSchema,
+  LoginResponseSchema,
+} from '../schemas/auth';
 import { hashPassword, verifyPassword } from '../utils/password';
 
 // Расширяем тип Request для добавления user
@@ -13,11 +19,11 @@ declare global {
   }
 }
 
-// Удаляем SALT_ROUNDS, теперь используем новую систему паролей
-
 export async function register(req: Request, res: Response) {
   try {
-    const { email, password, name, phone } = req.body;
+    const { email, password, name, phone } = RegisterRequestSchema.parse(
+      req.body
+    );
     if (!email || !password || !name) {
       return res
         .status(400)
@@ -62,13 +68,14 @@ export async function register(req: Request, res: Response) {
     });
 
     // НИКОГДА не возвращаем passwordHash
-    return res.status(201).json({
+    const response = RegisterResponseSchema.parse({
       id: user.id,
       email: user.email,
       name: user.name,
       slug: user.slug,
       phone: user.phone,
     });
+    return res.status(201).json(response);
   } catch (err) {
     console.error(err);
     return res.status(500).json({ error: 'Server error' });
@@ -77,7 +84,7 @@ export async function register(req: Request, res: Response) {
 
 export async function login(req: Request, res: Response) {
   try {
-    const { email, password } = req.body;
+    const { email, password } = LoginRequestSchema.parse(req.body);
     if (!email || !password)
       return res.status(400).json({ error: 'email and password required' });
 
@@ -93,7 +100,8 @@ export async function login(req: Request, res: Response) {
       { expiresIn: '7d' }
     );
 
-    return res.json({ token });
+    const response = LoginResponseSchema.parse({ token });
+    return res.json(response);
   } catch (err) {
     console.error(err);
     return res.status(500).json({ error: 'Server error' });

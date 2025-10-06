@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import prisma from '../prismaClient';
+import { PublicProfileResponseSchema } from '../schemas/public';
 
 export async function getPublicProfileBySlug(req: Request, res: Response) {
   try {
@@ -33,13 +34,14 @@ export async function getPublicProfileBySlug(req: Request, res: Response) {
       return res.status(404).json({ error: 'Profile not found' });
     }
 
-    return res.json({
+    const response = PublicProfileResponseSchema.parse({
       name: user.name,
       photoUrl: user.photoUrl,
       description: user.description,
       address: user.address,
       services: user.services,
     });
+    return res.json(response);
   } catch (error) {
     console.error(error);
     return res.status(500).json({ error: 'Server error' });
