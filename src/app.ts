@@ -4,6 +4,7 @@ import dotenv from 'dotenv';
 import prisma from './prismaClient';
 import authRouter from './routes/auth';
 import publicRouter from './routes/public';
+import servicesRouter from './routes/services';
 
 dotenv.config();
 
@@ -17,6 +18,7 @@ app.use(express.urlencoded({ extended: true }));
 // Routes
 app.use('/api/auth', authRouter);
 app.use('/api/public', publicRouter);
+app.use('/api/services', servicesRouter);
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
@@ -63,30 +65,6 @@ app.get('/api/users', async (req, res) => {
   } catch (error) {
     res.status(500).json({
       error: 'Failed to fetch users',
-      message: error instanceof Error ? error.message : 'Unknown error',
-    });
-  }
-});
-
-// Get all services
-app.get('/api/services', async (req, res) => {
-  try {
-    const services = await prisma.service.findMany({
-      where: { isActive: true },
-      include: {
-        master: {
-          select: {
-            id: true,
-            name: true,
-            email: true,
-          },
-        },
-      },
-    });
-    res.json(services);
-  } catch (error) {
-    res.status(500).json({
-      error: 'Failed to fetch services',
       message: error instanceof Error ? error.message : 'Unknown error',
     });
   }
