@@ -1,0 +1,156 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String        @id @default(cuid())
+  email         String        @unique
+  passwordHash  String
+  name          String
+  phone         String?
+  slug          String        @unique
+  description   String?
+  photoUrl      String?
+  address       String?
+  isActive      Boolean       @default(true)
+  role          UserRole      @default(MASTER)
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  services      Service[]
+  clients       Client[]
+  appointments  Appointment[]
+  integrations  Integration[]
+
+  @@index([email])
+  @@index([slug])
+  @@index([isActive])
+}
+
+model Service {
+  id          String      @id @default(cuid())
+  masterId    String
+  name        String
+  price       Decimal     @db.Decimal(10, 2)
+  durationMin Int
+  description String?
+  isActive    Boolean     @default(true)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  master      User        @relation(fields: [masterId], references: [id], onDelete: Cascade)
+  appointments Appointment[]
+
+  @@index([masterId])
+  @@index([isActive])
+}
+
+model Client {
+  id          String      @id @default(cuid())
+  masterId    String
+  name        String
+  phone       String?
+  email       String?
+  allergies   String?
+  notes       String?
+  isActive    Boolean     @default(true)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  master      User        @relation(fields: [masterId], references: [id], onDelete: Cascade)
+  appointments Appointment[]
+  photos      Photo[]
+
+  @@index([masterId])
+  @@index([phone])
+  @@index([email])
+  @@index([isActive])
+}
+
+model Appointment {
+  id         String     @id @default(cuid())
+  masterId   String
+  clientId   String
+  serviceId  String
+  startAt    DateTime
+  endAt      DateTime
+  status     AppointmentStatus @default(PENDING)
+  source     AppointmentSource @default(WEB)
+  notes      String?
+  price      Decimal?   @db.Decimal(10, 2)
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  master     User       @relation(fields: [masterId], references: [id], onDelete: Cascade)
+  client     Client     @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  service    Service    @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+
+  @@index([masterId])
+  @@index([clientId])
+  @@index([startAt])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model Photo {
+  id        String   @id @default(cuid())
+  clientId  String
+  url       String
+  description String?
+  createdAt DateTime @default(now())
+
+  client    Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([clientId])
+  @@index([createdAt])
+}
+
+model Integration {
+  id        String   @id @default(cuid())
+  masterId  String
+  type      IntegrationType
+  config    Json
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  master    User     @relation(fields: [masterId], references: [id], onDelete: Cascade)
+
+  @@index([masterId])
+  @@index([type])
+  @@index([isActive])
+}
+
+enum UserRole {
+  MASTER
+  ADMIN
+}
+
+enum AppointmentStatus {
+  PENDING
+  CONFIRMED
+  COMPLETED
+  CANCELED
+  NO_SHOW
+}
+
+enum AppointmentSource {
+  WEB
+  TELEGRAM
+  VK
+  WHATSAPP
+  MANUAL
+  PHONE
+}
+
+enum IntegrationType {
+  TELEGRAM
+  VK
+  WHATSAPP
+  GOOGLE_CALENDAR
+}
