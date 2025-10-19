@@ -5,6 +5,10 @@ import {
   BookingResponseSchema,
   PublicProfileResponseSchema,
 } from '../schemas/public';
+import {
+  notificationQueue,
+  NotificationData,
+} from '../services/notificationQueue';
 
 function addMinutes(date: Date, minutes: number): Date {
   return new Date(date.getTime() + minutes * 60 * 1000);
@@ -145,6 +149,42 @@ export async function bookPublicSlot(req: Request, res: Response) {
         },
       });
     });
+
+    // Добавляем задачу уведомления в очередь
+    try {
+      const notificationData: NotificationData = {
+        appointmentId: appointment.id,
+        clientName: name,
+        clientPhone: phone,
+        masterName: master.name,
+        serviceName: service.name,
+        startAt: appointment.startAt.toISOString(),
+        endAt: appointment.endAt.toISOString(),
+        price: Number(service.price),
+      };
+
+      const notificationJob = await notificationQueue.add(
+        'send-booking-notification',
+        notificationData,
+        {
+          priority: 1, // Высокий приоритет для новых записей
+          delay: 0, // Отправляем сразу
+        }
+      );
+
+      // Сохраняем ID задачи в базе данных
+      await prisma.appointment.update({
+        where: { id: appointment.id },
+        data: { notificationJobId: notificationJob.id.toString() },
+      });
+
+      console.log(
+        `Notification job ${notificationJob.id} queued for appointment ${appointment.id}`
+      );
+    } catch (notificationError) {
+      // Логируем ошибку, но не прерываем основной процесс
+      console.error('Failed to queue notification:', notificationError);
+    }
 
     const response = BookingResponseSchema.parse({
       id: appointment.id,
