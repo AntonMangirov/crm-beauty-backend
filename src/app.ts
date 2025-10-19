@@ -1,25 +1,56 @@
 import express from 'express';
-import cors from 'cors';
 import dotenv from 'dotenv';
 import prisma from './prismaClient';
 import authRouter from './routes/auth';
 import publicRouter from './routes/public';
 import servicesRouter from './routes/services';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler';
+import {
+  helmetConfig,
+  generalRateLimit,
+  authRateLimit,
+  publicRateLimit,
+  bookingRateLimit,
+  requestSizeLimit,
+  sanitizeInput,
+  securityHeaders,
+} from './middleware/security';
+import {
+  corsConfig,
+  authCorsConfig,
+  publicCorsConfig,
+  handlePreflight,
+  corsLogger,
+} from './middleware/cors';
 
 dotenv.config();
 
 const app = express();
 
-// Middleware
-app.use(cors());
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+// 1. Базовые middleware безопасности (должны быть первыми)
+app.use(helmetConfig);
+app.use(securityHeaders);
+app.use(requestSizeLimit(10 * 1024 * 1024)); // 10MB лимит
+app.use(sanitizeInput);
 
-// Routes
-app.use('/api/auth', authRouter);
-app.use('/api/public', publicRouter);
-app.use('/api/services', servicesRouter);
+// 2. CORS middleware
+app.use(corsLogger);
+app.use(handlePreflight);
+
+// 3. Общий rate limiting
+app.use(generalRateLimit);
+
+// 4. Body parsing middleware
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
+// 5. Специфичные CORS и rate limiting для разных endpoints
+app.use('/api/auth', authCorsConfig, authRateLimit, authRouter);
+app.use('/api/public', publicCorsConfig, publicRateLimit, publicRouter);
+app.use('/api/services', corsConfig, servicesRouter);
+
+// 6. Специальный rate limiting для создания записей
+app.use('/api/public/:slug/book', bookingRateLimit);
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
