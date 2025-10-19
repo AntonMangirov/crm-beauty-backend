@@ -34,6 +34,11 @@ test-results/
 playwright-report/
 test-results.xml
 
+# Test files (if not needed in production)
+# src/__tests__/api-basic.test.ts
+# src/__tests__/api-stability-mock.test.ts
+# src/__tests__/api-stability.test.ts
+
 # Production features (development only)
 # Uncomment when moving files to production
 # src/features/production/
@@ -92,6 +97,12 @@ local/
 ehthumbs.db
 Thumbs.db
 
+# Backup and temporary files
+*.backup
+*.bak
+*.tmp
+*~
+
 # Security
 *.pem
 *.key
@@ -110,7 +121,6 @@ pids/
 *.pid.lock
 
 # Coverage directory used by tools like istanbul
-coverage/
 *.lcov
 
 # Dependency directories

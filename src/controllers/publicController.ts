@@ -47,7 +47,10 @@ export async function getPublicProfileBySlug(req: Request, res: Response) {
       photoUrl: user.photoUrl,
       description: user.description,
       address: user.address,
-      services: user.services,
+      services: user.services.map(service => ({
+        ...service,
+        price: service.price.toString(),
+      })),
     });
     return res.json(response);
   } catch (error) {
