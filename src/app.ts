@@ -22,6 +22,12 @@ import {
   handlePreflight,
   corsLogger,
 } from './middleware/cors';
+import {
+  validateTimeMiddleware,
+  timeLoggingMiddleware,
+  addTimeStampsMiddleware,
+  timezoneMiddleware,
+} from './middleware/timeMiddleware';
 
 dotenv.config();
 
@@ -37,20 +43,25 @@ app.use(sanitizeInput);
 app.use(corsLogger);
 app.use(handlePreflight);
 
-// 3. Общий rate limiting
+// 3. Time middleware
+app.use(timeLoggingMiddleware);
+app.use(addTimeStampsMiddleware);
+app.use(timezoneMiddleware);
+
+// 4. Общий rate limiting
 app.use(generalRateLimit);
 
-// 4. Body parsing middleware
+// 5. Body parsing middleware
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// 5. Специфичные CORS и rate limiting для разных endpoints
+// 6. Специфичные CORS и rate limiting для разных endpoints
 app.use('/api/auth', authCorsConfig, authRateLimit, authRouter);
 app.use('/api/public', publicCorsConfig, publicRateLimit, publicRouter);
 app.use('/api/services', corsConfig, servicesRouter);
 
-// 6. Специальный rate limiting для создания записей
-app.use('/api/public/:slug/book', bookingRateLimit);
+// 7. Специальный rate limiting и валидация времени для создания записей
+app.use('/api/public/:slug/book', bookingRateLimit, validateTimeMiddleware);
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {

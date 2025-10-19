@@ -15,10 +15,7 @@ import {
   ServiceNotFoundError,
   TimeSlotConflictError,
 } from '../errors/BusinessErrors';
-
-function addMinutes(date: Date, minutes: number): Date {
-  return new Date(date.getTime() + minutes * 60 * 1000);
-}
+import { addMinutesToUTC, formatUTCToISO } from '../utils/timeUtils';
 
 export async function getPublicProfileBySlug(req: Request, res: Response) {
   try {
@@ -103,8 +100,8 @@ export async function bookPublicSlot(req: Request, res: Response) {
     throw new ServiceNotFoundError(serviceId);
   }
 
-  const start = new Date(startAt);
-  const end = addMinutes(start, service.durationMin);
+  const start = startAt; // Уже Date объект из Zod схемы
+  const end = addMinutesToUTC(start, service.durationMin);
 
   // 4) Используем транзакцию для защиты от double-booking
   const appointment = await prisma.$transaction(async tx => {
@@ -203,8 +200,8 @@ export async function bookPublicSlot(req: Request, res: Response) {
 
   const response = BookingResponseSchema.parse({
     id: appointment.id,
-    startAt: appointment.startAt.toISOString(),
-    endAt: appointment.endAt.toISOString(),
+    startAt: formatUTCToISO(appointment.startAt),
+    endAt: formatUTCToISO(appointment.endAt),
     status: appointment.status,
   });
 

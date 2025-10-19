@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { isValidISOString } from '../utils/timeUtils';
 
 export const ServiceSchema = z.object({
   id: z.string(),
@@ -23,7 +24,13 @@ export const BookingRequestSchema = z.object({
   name: z.string().min(1).max(100),
   phone: z.string().min(5).max(32),
   serviceId: z.string().min(1),
-  startAt: z.coerce.date(),
+  startAt: z
+    .string()
+    .refine(isValidISOString, {
+      message:
+        'startAt must be a valid ISO string (e.g., "2024-01-01T10:00:00.000Z")',
+    })
+    .transform(isoString => new Date(isoString)),
   comment: z.string().max(500).optional(),
 });
 export type BookingRequest = z.infer<typeof BookingRequestSchema>;
