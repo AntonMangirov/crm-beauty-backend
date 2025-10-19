@@ -5,6 +5,7 @@ import prisma from './prismaClient';
 import authRouter from './routes/auth';
 import publicRouter from './routes/public';
 import servicesRouter from './routes/services';
+import { errorHandler, notFoundHandler } from './middleware/errorHandler';
 
 dotenv.config();
 
@@ -110,5 +111,9 @@ app.get('/api/appointments', async (req, res) => {
     });
   }
 });
+
+// Error handling middleware (должен быть последним)
+app.use(notFoundHandler);
+app.use(errorHandler);
 
 export default app;
