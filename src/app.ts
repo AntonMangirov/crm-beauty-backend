@@ -1,6 +1,7 @@
 import express from 'express';
 import dotenv from 'dotenv';
 import prisma from './prismaClient';
+import { Prisma } from '@prisma/client';
 import authRouter from './routes/auth';
 import publicRouter from './routes/public';
 import servicesRouter from './routes/services';
@@ -25,6 +26,7 @@ import {
   addTimeStampsMiddleware,
   timezoneMiddleware,
 } from './middleware/timeMiddleware';
+import { auth } from './middleware/auth';
 
 dotenv.config();
 
@@ -124,38 +126,62 @@ app.get('/api/users', async (req, res) => {
   }
 });
 
-// Get appointments
-app.get('/api/appointments', async (req, res) => {
+// Приватный список встреч мастера (по userId из токена)
+// GET /api/appointments?dateFrom&dateTo
+app.get('/api/appointments', auth, async (req, res) => {
   try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const { dateFrom, dateTo } = req.query as {
+      dateFrom?: string;
+      dateTo?: string;
+    };
+
+    let startFilter: Date | undefined;
+    let endFilter: Date | undefined;
+
+    if (dateFrom) {
+      const d = new Date(dateFrom);
+      if (isNaN(d.getTime())) {
+        return res.status(400).json({ error: 'Invalid dateFrom' });
+      }
+      startFilter = d;
+    }
+
+    if (dateTo) {
+      const d = new Date(dateTo);
+      if (isNaN(d.getTime())) {
+        return res.status(400).json({ error: 'Invalid dateTo' });
+      }
+      endFilter = d;
+    }
+
+    const where: Prisma.AppointmentWhereInput = { masterId: userId };
+    if (startFilter || endFilter) {
+      where.startAt = {};
+      if (startFilter) where.startAt.gte = startFilter;
+      if (endFilter) where.startAt.lte = endFilter;
+    }
+
     const appointments = await prisma.appointment.findMany({
+      where,
       include: {
         master: {
-          select: {
-            id: true,
-            name: true,
-            email: true,
-          },
+          select: { id: true, name: true, email: true },
         },
         client: {
-          select: {
-            id: true,
-            name: true,
-            phone: true,
-          },
+          select: { id: true, name: true, phone: true },
         },
         service: {
-          select: {
-            id: true,
-            name: true,
-            price: true,
-            durationMin: true,
-          },
+          select: { id: true, name: true, price: true, durationMin: true },
         },
       },
-      orderBy: {
-        startAt: 'desc',
-      },
+      orderBy: { startAt: 'desc' },
     });
+
     res.json(appointments);
   } catch (error) {
     res.status(500).json({
