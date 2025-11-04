@@ -8,7 +8,6 @@
 
 ```
 src/features/production/
-├── rateLimit.ts                    → src/middleware/rateLimit.ts
 ├── emailController.ts              → src/controllers/emailController.ts
 ├── tokens.ts                       → src/utils/tokens.ts
 └── argon2Password.ts              → src/utils/argon2Password.ts
@@ -34,24 +33,7 @@ src/features/production/
 
 ## 🚀 Пошаговая инструкция по переносу:
 
-### 1. Rate Limiting
-
-```bash
-# Перенос файла
-cp src/features/production/rateLimit.ts src/middleware/rateLimit.ts
-
-# Установка зависимости
-npm install express-rate-limit
-
-# Обновление маршрутов
-# В src/routes/auth.ts добавить:
-import { authRateLimit, registerRateLimit } from '../middleware/rateLimit';
-
-router.post('/register', registerRateLimit, register);
-router.post('/login', authRateLimit, login);
-```
-
-### 2. Email функции
+### 1. Email функции
 
 ```bash
 # Перенос файлов
@@ -77,7 +59,7 @@ router.post('/forgot-password', requestPasswordReset);
 router.post('/reset-password/:token', resetPassword);
 ```
 
-### 3. Argon2 для паролей
+### 2. Argon2 для паролей
 
 ```bash
 # Перенос файла
@@ -90,7 +72,7 @@ npm install argon2
 # Заменить bcrypt на argon2 для продакшена
 ```
 
-### 4. Refresh Tokens
+### 3. Refresh Tokens
 
 ```bash
 # Перенос файла
@@ -117,7 +99,7 @@ router.post('/revoke', revokeToken);
 ### Базовые зависимости
 
 ```bash
-npm install express-rate-limit argon2
+npm install argon2
 ```
 
 ### Email сервисы (выберите один)
@@ -169,7 +151,7 @@ RATE_LIMIT_MAX_REQUESTS="100"
 
 ### Этап 1: Базовая безопасность
 
-1. Rate Limiting
+1. ✅ Rate Limiting (уже реализован)
 2. Улучшенная валидация
 3. Логирование
 

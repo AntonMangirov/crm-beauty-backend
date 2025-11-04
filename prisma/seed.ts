@@ -19,7 +19,7 @@ async function main() {
       email: 'anna@example.com',
       passwordHash,
       name: 'Анна Красоткина',
-      slug: 'anna-krasotkina-123',
+      slug: 'anna-krasotkina',
       description:
         'Профессиональный мастер маникюра с 5-летним опытом. Специализируюсь на классическом и аппаратном маникюре.',
       phone: '+7-999-123-45-67',
@@ -77,7 +77,7 @@ async function main() {
       email: 'maria@example.com',
       passwordHash,
       name: 'Мария Стильная',
-      slug: 'maria-stilnaya-456',
+      slug: 'maria-stilnaya',
       description:
         'Мастер широкого профиля: маникюр, педикюр, наращивание ногтей. Работаю с любыми материалами.',
       phone: '+7-999-987-65-43',

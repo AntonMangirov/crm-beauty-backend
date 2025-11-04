@@ -1,24 +1,80 @@
 import express from 'express';
-import cors from 'cors';
 import dotenv from 'dotenv';
 import prisma from './prismaClient';
+import { Prisma } from '@prisma/client';
 import authRouter from './routes/auth';
 import publicRouter from './routes/public';
 import servicesRouter from './routes/services';
+import { errorHandler, notFoundHandler } from './middleware/errorHandler';
+import {
+  helmetConfig,
+  generalRateLimit,
+  authRateLimit,
+  publicRateLimit,
+  requestSizeLimit,
+  sanitizeInput,
+  securityHeaders,
+} from './middleware/security';
+import {
+  corsConfig,
+  authCorsConfig,
+  publicCorsConfig,
+  corsLogger,
+} from './middleware/cors';
+import {
+  timeLoggingMiddleware,
+  addTimeStampsMiddleware,
+  timezoneMiddleware,
+} from './middleware/timeMiddleware';
+import { auth } from './middleware/auth';
 
 dotenv.config();
 
 const app = express();
 
-// Middleware
-app.use(cors());
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+// 1. CORS logger (для отладки)
+app.use(corsLogger);
 
-// Routes
-app.use('/api/auth', authRouter);
-app.use('/api/public', publicRouter);
-app.use('/api/services', servicesRouter);
+// 2. Body parsing middleware (до rate limiting, чтобы body был доступен)
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
+// 3. Базовые middleware безопасности (БЕЗ Helmet пока, чтобы не блокировать CORS)
+app.use(securityHeaders);
+app.use(requestSizeLimit(10 * 1024 * 1024)); // 10MB лимит
+app.use(sanitizeInput);
+
+// 4. Time middleware
+app.use(timeLoggingMiddleware);
+app.use(addTimeStampsMiddleware);
+app.use(timezoneMiddleware);
+
+// 5. Общий rate limiting
+app.use(generalRateLimit);
+
+// 6. Root endpoint (информация об API)
+app.get('/', (req, res) => {
+  res.json({
+    name: 'CRM Beauty Backend API',
+    version: '1.0.0',
+    status: 'running',
+    endpoints: {
+      health: '/api/health',
+      public: '/api/public',
+      auth: '/api/auth',
+      services: '/api/services',
+    },
+    timestamp: new Date().toISOString(),
+  });
+});
+
+// 7. Специфичные CORS и rate limiting для разных endpoints
+app.use('/api/auth', authCorsConfig, authRateLimit, authRouter);
+app.use('/api/public', publicCorsConfig, publicRateLimit, publicRouter);
+app.use('/api/services', corsConfig, servicesRouter);
+
+// 8. Helmet применяется ПОСЛЕ CORS, чтобы не блокировать заголовки
+app.use(helmetConfig);
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
@@ -70,38 +126,62 @@ app.get('/api/users', async (req, res) => {
   }
 });
 
-// Get appointments
-app.get('/api/appointments', async (req, res) => {
+// Приватный список встреч мастера (по userId из токена)
+// GET /api/appointments?dateFrom&dateTo
+app.get('/api/appointments', auth, async (req, res) => {
   try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const { dateFrom, dateTo } = req.query as {
+      dateFrom?: string;
+      dateTo?: string;
+    };
+
+    let startFilter: Date | undefined;
+    let endFilter: Date | undefined;
+
+    if (dateFrom) {
+      const d = new Date(dateFrom);
+      if (isNaN(d.getTime())) {
+        return res.status(400).json({ error: 'Invalid dateFrom' });
+      }
+      startFilter = d;
+    }
+
+    if (dateTo) {
+      const d = new Date(dateTo);
+      if (isNaN(d.getTime())) {
+        return res.status(400).json({ error: 'Invalid dateTo' });
+      }
+      endFilter = d;
+    }
+
+    const where: Prisma.AppointmentWhereInput = { masterId: userId };
+    if (startFilter || endFilter) {
+      where.startAt = {};
+      if (startFilter) where.startAt.gte = startFilter;
+      if (endFilter) where.startAt.lte = endFilter;
+    }
+
     const appointments = await prisma.appointment.findMany({
+      where,
       include: {
         master: {
-          select: {
-            id: true,
-            name: true,
-            email: true,
-          },
+          select: { id: true, name: true, email: true },
         },
         client: {
-          select: {
-            id: true,
-            name: true,
-            phone: true,
-          },
+          select: { id: true, name: true, phone: true },
         },
         service: {
-          select: {
-            id: true,
-            name: true,
-            price: true,
-            durationMin: true,
-          },
+          select: { id: true, name: true, price: true, durationMin: true },
         },
       },
-      orderBy: {
-        startAt: 'desc',
-      },
+      orderBy: { startAt: 'desc' },
     });
+
     res.json(appointments);
   } catch (error) {
     res.status(500).json({
@@ -110,5 +190,9 @@ app.get('/api/appointments', async (req, res) => {
     });
   }
 });
+
+// Error handling middleware (должен быть последним)
+app.use(notFoundHandler);
+app.use(errorHandler);
 
 export default app;

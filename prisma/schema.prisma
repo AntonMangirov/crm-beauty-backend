@@ -73,18 +73,19 @@ model Client {
 }
 
 model Appointment {
-  id         String     @id @default(cuid())
-  masterId   String
-  clientId   String
-  serviceId  String
-  startAt    DateTime
-  endAt      DateTime
-  status     AppointmentStatus @default(PENDING)
-  source     AppointmentSource @default(WEB)
-  notes      String?
-  price      Decimal?   @db.Decimal(10, 2)
-  createdAt  DateTime  @default(now())
-  updatedAt  DateTime  @updatedAt
+  id               String     @id @default(cuid())
+  masterId         String
+  clientId         String
+  serviceId        String
+  startAt          DateTime
+  endAt            DateTime
+  status           AppointmentStatus @default(PENDING)
+  source           AppointmentSource @default(WEB)
+  notes            String?
+  price            Decimal?   @db.Decimal(10, 2)
+  notificationJobId String?   // ID задачи уведомления в очереди
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
 
   master     User       @relation(fields: [masterId], references: [id], onDelete: Cascade)
   client     Client     @relation(fields: [clientId], references: [id], onDelete: Cascade)
