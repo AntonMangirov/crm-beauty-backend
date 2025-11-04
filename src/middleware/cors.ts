@@ -33,15 +33,21 @@ const originCheck = (
   /* eslint-enable no-unused-vars */
   // Разрешаем запросы без origin (например, Postman, мобильные приложения)
   if (!origin) {
+    console.log('CORS: Request without origin, allowing');
     return callback(null, true);
   }
 
-  const isDevelopment = process.env.NODE_ENV === 'development';
+  const isDevelopment = process.env.NODE_ENV !== 'production';
   const allowedList = isDevelopment
     ? [...allowedOrigins, ...devOrigins]
     : allowedOrigins;
 
+  console.log(
+    `CORS: Checking origin: ${origin}, allowed: ${allowedList.join(', ')}`
+  );
+
   if (allowedList.includes(origin)) {
+    console.log(`CORS: Origin ${origin} is allowed`);
     return callback(null, true);
   }
 
@@ -95,15 +101,24 @@ export const publicCorsConfig = cors({
   origin: originCheck,
   credentials: false, // Публичные API не требуют credentials
   methods: ['GET', 'POST', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Accept'],
+  allowedHeaders: [
+    'Origin',
+    'X-Requested-With',
+    'Content-Type',
+    'Accept',
+    'Authorization',
+  ],
+  exposedHeaders: ['Content-Type'],
   maxAge: 3600, // 1 час для preflight cache
   optionsSuccessStatus: 200,
+  preflightContinue: false,
 });
 
 // Middleware для обработки preflight запросов
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const handlePreflight = (req: Request, res: Response, next: any) => {
   if (req.method === 'OPTIONS') {
+    // Preflight запросы обрабатываются CORS middleware, но если нужно, можем добавить заголовки здесь
     res.status(200).end();
     return;
   }

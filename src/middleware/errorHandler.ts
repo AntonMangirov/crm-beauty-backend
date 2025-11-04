@@ -9,6 +9,8 @@ interface ErrorResponse {
   details?: any;
   timestamp: string;
   path: string;
+  serverTime?: string;
+  timezone?: string;
 }
 
 export const errorHandler = (
@@ -163,11 +165,14 @@ export const unhandledErrorHandler = (
 
 // Middleware для обработки 404 ошибок
 export const notFoundHandler = (req: Request, res: Response): void => {
+  const now = new Date();
   const errorResponse: ErrorResponse = {
     error: 'Route not found',
     code: 'ROUTE_NOT_FOUND',
-    timestamp: new Date().toISOString(),
+    timestamp: now.toISOString(),
     path: req.path,
+    serverTime: now.toISOString(),
+    timezone: 'UTC',
   };
 
   res.status(404).json(errorResponse);

@@ -22,7 +22,24 @@ export const validateTimeMiddleware = (
 
     // Валидируем startAt
     if (startAt) {
-      if (!isValidISOString(startAt)) {
+      // startAt может быть строкой или Date объектом (если Express автоматически преобразовал)
+      let startAtString: string;
+      if (startAt instanceof Date) {
+        startAtString = startAt.toISOString();
+      } else if (typeof startAt === 'string') {
+        startAtString = startAt;
+      } else {
+        return res.status(400).json({
+          error: 'Invalid time format',
+          code: 'INVALID_TIME_FORMAT',
+          message:
+            'startAt must be a valid ISO string (e.g., "2024-01-01T10:00:00.000Z")',
+          timestamp: new Date().toISOString(),
+          path: req.path,
+        });
+      }
+
+      if (!isValidISOString(startAtString)) {
         return res.status(400).json({
           error: 'Invalid time format',
           code: 'INVALID_TIME_FORMAT',
@@ -34,7 +51,7 @@ export const validateTimeMiddleware = (
       }
 
       try {
-        const startDate = parseISOToUTC(startAt);
+        const startDate = parseISOToUTC(startAtString);
 
         if (!validateTimeRange(startDate)) {
           return res.status(400).json({
@@ -66,8 +83,9 @@ export const validateTimeMiddleware = (
           });
         }
 
-        // Заменяем строку на Date объект для дальнейшей обработки
-        req.body.startAt = startDate;
+        // НЕ заменяем строку на Date - оставляем как строку для валидации
+        // Date объект будет создан позже в контроллере после валидации
+        req.body.startAt = startAtString;
       } catch (err) {
         return res.status(400).json({
           error: 'Time parsing error',

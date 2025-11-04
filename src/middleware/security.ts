@@ -3,6 +3,7 @@ import rateLimit from 'express-rate-limit';
 import { Request, Response } from 'express';
 
 // Конфигурация Helmet для безопасности заголовков
+// ВНИМАНИЕ: Helmet может блокировать CORS заголовки, поэтому применяется после CORS middleware
 export const helmetConfig = helmet({
   contentSecurityPolicy: {
     directives: {
@@ -10,7 +11,12 @@ export const helmetConfig = helmet({
       styleSrc: ["'self'", "'unsafe-inline'"],
       scriptSrc: ["'self'"],
       imgSrc: ["'self'", 'data:', 'https:'],
-      connectSrc: ["'self'"],
+      connectSrc: [
+        "'self'",
+        'http://localhost:3000',
+        'http://localhost:5173',
+        'http://127.0.0.1:5173',
+      ],
       fontSrc: ["'self'"],
       objectSrc: ["'none'"],
       mediaSrc: ["'self'"],
@@ -18,6 +24,8 @@ export const helmetConfig = helmet({
     },
   },
   crossOriginEmbedderPolicy: false,
+  crossOriginResourcePolicy: false, // Отключаем, чтобы не блокировать CORS
+  crossOriginOpenerPolicy: false, // Отключаем для CORS
   hsts: {
     maxAge: 31536000,
     includeSubDomains: true,

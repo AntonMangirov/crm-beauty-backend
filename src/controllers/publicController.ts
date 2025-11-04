@@ -1,7 +1,6 @@
 import { Request, Response } from 'express';
 import prisma from '../prismaClient';
 import {
-  BookingRequestSchema,
   BookingResponseSchema,
   PublicProfileResponseSchema,
 } from '../schemas/public';
@@ -97,18 +96,14 @@ export async function bookPublicSlot(req: Request, res: Response) {
 
     console.log(`[BOOKING] Мастер найден: ${master.name} (ID: ${master.id})`);
 
-    // 2) Валидируем вход
-    console.log(`[BOOKING] Валидация входных данных...`);
-    const parsed = BookingRequestSchema.safeParse(req.body);
-    if (!parsed.success) {
-      console.log(`[BOOKING] Ошибка валидации:`, parsed.error.flatten());
-      return res.status(400).json({
-        error: 'Invalid request',
-        details: parsed.error.flatten(),
-        message: 'Проверьте правильность заполнения полей',
-      });
-    }
-    const { name, phone, serviceId, startAt, comment } = parsed.data;
+    console.log(`[BOOKING] Использование данных из валидированного body...`);
+    const { name, phone, serviceId, startAt, comment } = req.body as {
+      name: string;
+      phone: string;
+      serviceId: string;
+      startAt: Date;
+      comment?: string;
+    };
     console.log(`[BOOKING] Валидация прошла успешно. Данные:`, {
       name,
       phone,
@@ -219,45 +214,62 @@ export async function bookPublicSlot(req: Request, res: Response) {
       return appointment;
     });
 
-    // Добавляем задачу уведомления в очередь
     console.log(`[BOOKING] Добавление задачи уведомления...`);
-    try {
-      const notificationData: NotificationData = {
-        appointmentId: appointment.id,
-        clientName: name,
-        clientPhone: phone,
-        masterName: master.name,
-        serviceName: service.name,
-        startAt: appointment.startAt.toISOString(),
-        endAt: appointment.endAt.toISOString(),
-        price: Number(service.price),
-      };
+    (async () => {
+      try {
+        const notificationData: NotificationData = {
+          appointmentId: appointment.id,
+          clientName: name,
+          clientPhone: phone,
+          masterName: master.name,
+          serviceName: service.name,
+          startAt: appointment.startAt.toISOString(),
+          endAt: appointment.endAt.toISOString(),
+          price: Number(service.price),
+        };
 
-      const notificationJob = await notificationQueue.add(
-        'send-booking-notification',
-        notificationData,
-        {
-          priority: 1, // Высокий приоритет для новых записей
-          delay: 0, // Отправляем сразу
-        }
-      );
+        const notificationPromise = notificationQueue.add(
+          'send-booking-notification',
+          notificationData,
+          {
+            priority: 1,
+            delay: 0,
+          }
+        );
 
-      // Сохраняем ID задачи в базе данных
-      await prisma.appointment.update({
-        where: { id: appointment.id },
-        data: { notificationJobId: notificationJob.id.toString() },
-      });
+        const timeoutPromise = new Promise<never>((_, reject) =>
+          global.setTimeout(
+            () => reject(new Error('Notification queue timeout')),
+            5000
+          )
+        );
 
-      console.log(
-        `[BOOKING] Задача уведомления ${notificationJob.id} добавлена для записи ${appointment.id}`
-      );
-    } catch (notificationError) {
-      // Логируем ошибку, но не прерываем основной процесс
-      console.error(
-        `[BOOKING] Ошибка добавления уведомления:`,
-        notificationError
-      );
-    }
+        const notificationJob = (await Promise.race([
+          notificationPromise,
+          timeoutPromise,
+        ])) as Awaited<typeof notificationPromise>;
+
+        const updatePromise = prisma.appointment.update({
+          where: { id: appointment.id },
+          data: { notificationJobId: notificationJob.id.toString() },
+        });
+
+        const updateTimeoutPromise = new Promise<never>((_, reject) =>
+          global.setTimeout(() => reject(new Error('Update timeout')), 3000)
+        );
+
+        await Promise.race([updatePromise, updateTimeoutPromise]);
+
+        console.log(
+          `[BOOKING] Задача уведомления ${notificationJob.id} добавлена для записи ${appointment.id}`
+        );
+      } catch (notificationError) {
+        console.error(
+          `[BOOKING] Ошибка добавления уведомления:`,
+          notificationError
+        );
+      }
+    })();
 
     const response = BookingResponseSchema.parse({
       id: appointment.id,

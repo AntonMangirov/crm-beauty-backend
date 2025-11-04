@@ -10,7 +10,6 @@ import {
   generalRateLimit,
   authRateLimit,
   publicRateLimit,
-  bookingRateLimit,
   requestSizeLimit,
   sanitizeInput,
   securityHeaders,
@@ -19,11 +18,9 @@ import {
   corsConfig,
   authCorsConfig,
   publicCorsConfig,
-  handlePreflight,
   corsLogger,
 } from './middleware/cors';
 import {
-  validateTimeMiddleware,
   timeLoggingMiddleware,
   addTimeStampsMiddleware,
   timezoneMiddleware,
@@ -33,35 +30,49 @@ dotenv.config();
 
 const app = express();
 
-// 1. Базовые middleware безопасности (должны быть первыми)
-app.use(helmetConfig);
+// 1. CORS logger (для отладки)
+app.use(corsLogger);
+
+// 2. Body parsing middleware (до rate limiting, чтобы body был доступен)
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
+// 3. Базовые middleware безопасности (БЕЗ Helmet пока, чтобы не блокировать CORS)
 app.use(securityHeaders);
 app.use(requestSizeLimit(10 * 1024 * 1024)); // 10MB лимит
 app.use(sanitizeInput);
 
-// 2. CORS middleware
-app.use(corsLogger);
-app.use(handlePreflight);
-
-// 3. Time middleware
+// 4. Time middleware
 app.use(timeLoggingMiddleware);
 app.use(addTimeStampsMiddleware);
 app.use(timezoneMiddleware);
 
-// 4. Общий rate limiting
+// 5. Общий rate limiting
 app.use(generalRateLimit);
 
-// 5. Body parsing middleware
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+// 6. Root endpoint (информация об API)
+app.get('/', (req, res) => {
+  res.json({
+    name: 'CRM Beauty Backend API',
+    version: '1.0.0',
+    status: 'running',
+    endpoints: {
+      health: '/api/health',
+      public: '/api/public',
+      auth: '/api/auth',
+      services: '/api/services',
+    },
+    timestamp: new Date().toISOString(),
+  });
+});
 
-// 6. Специфичные CORS и rate limiting для разных endpoints
+// 7. Специфичные CORS и rate limiting для разных endpoints
 app.use('/api/auth', authCorsConfig, authRateLimit, authRouter);
 app.use('/api/public', publicCorsConfig, publicRateLimit, publicRouter);
 app.use('/api/services', corsConfig, servicesRouter);
 
-// 7. Специальный rate limiting и валидация времени для создания записей
-app.use('/api/public/:slug/book', bookingRateLimit, validateTimeMiddleware);
+// 8. Helmet применяется ПОСЛЕ CORS, чтобы не блокировать заголовки
+app.use(helmetConfig);
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
