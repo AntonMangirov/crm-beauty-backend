@@ -45,3 +45,14 @@ export const BookingResponseSchema = z.object({
   status: z.enum(['PENDING', 'CONFIRMED', 'COMPLETED', 'CANCELED', 'NO_SHOW']),
 });
 export type BookingResponse = z.infer<typeof BookingResponseSchema>;
+
+export const TimeslotsQuerySchema = z.object({
+  date: z.string().optional(), // ISO date string (YYYY-MM-DD)
+  serviceId: z.string().optional(),
+});
+export type TimeslotsQuery = z.infer<typeof TimeslotsQuerySchema>;
+
+export const TimeslotsResponseSchema = z.object({
+  available: z.array(z.string()), // ISO datetime strings
+});
+export type TimeslotsResponse = z.infer<typeof TimeslotsResponseSchema>;

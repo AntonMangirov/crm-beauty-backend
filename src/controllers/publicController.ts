@@ -15,6 +15,7 @@ import {
   TimeSlotConflictError,
 } from '../errors/BusinessErrors';
 import { addMinutesToUTC, formatUTCToISO } from '../utils/timeUtils';
+import { TimeslotsResponseSchema } from '../schemas/public';
 
 export async function getPublicProfileBySlug(req: Request, res: Response) {
   try {
@@ -334,6 +335,169 @@ export async function bookPublicSlot(req: Request, res: Response) {
     }
 
     console.error(`[BOOKING] Необработанная ошибка:`, error);
+    return res.status(500).json({
+      error: 'Internal server error',
+      message: 'Внутренняя ошибка сервера',
+    });
+  }
+}
+
+/**
+ * Получение доступных временных слотов для мастера
+ * GET /api/public/:slug/timeslots?date=2025-11-06&serviceId=xxx
+ */
+export async function getTimeslots(req: Request, res: Response) {
+  try {
+    const { slug } = req.params;
+    const { date, serviceId } = req.query as {
+      date?: string;
+      serviceId?: string;
+    };
+
+    if (!slug) {
+      return res.status(400).json({ error: 'slug is required' });
+    }
+
+    // Находим мастера
+    const master = await prisma.user.findUnique({
+      where: { slug },
+      select: {
+        id: true,
+        isActive: true,
+      },
+    });
+
+    if (!master) {
+      throw new MasterNotFoundError(slug);
+    }
+
+    if (!master.isActive) {
+      throw new MasterInactiveError(slug);
+    }
+
+    // Определяем дату для поиска слотов
+    let targetDate: Date;
+    if (date) {
+      // Если дата передана, парсим её (ожидаем формат YYYY-MM-DD)
+      const parsedDate = new Date(date + 'T00:00:00.000Z');
+      if (isNaN(parsedDate.getTime())) {
+        return res.status(400).json({ error: 'Invalid date format' });
+      }
+      targetDate = parsedDate;
+    } else {
+      // Если дата не передана, используем завтрашний день
+      targetDate = new Date();
+      targetDate.setUTCDate(targetDate.getUTCDate() + 1);
+      targetDate.setUTCHours(0, 0, 0, 0);
+    }
+
+    // Получаем длительность услуги если указана
+    let serviceDuration = 60; // По умолчанию 60 минут
+    if (serviceId) {
+      const service = await prisma.service.findFirst({
+        where: {
+          id: serviceId,
+          masterId: master.id,
+          isActive: true,
+        },
+        select: { durationMin: true },
+      });
+
+      if (service) {
+        serviceDuration = service.durationMin;
+      }
+    }
+
+    // Получаем начало и конец дня в UTC
+    const startOfDay = new Date(targetDate);
+    startOfDay.setUTCHours(0, 0, 0, 0);
+    const endOfDay = new Date(targetDate);
+    endOfDay.setUTCHours(23, 59, 59, 999);
+
+    // Получаем существующие записи на эту дату
+    const existingAppointments = await prisma.appointment.findMany({
+      where: {
+        masterId: master.id,
+        startAt: {
+          gte: startOfDay,
+          lte: endOfDay,
+        },
+        status: {
+          notIn: ['CANCELED', 'NO_SHOW'],
+        },
+      },
+      select: {
+        startAt: true,
+        endAt: true,
+      },
+    });
+
+    // Генерируем все возможные временные слоты (9:00 - 18:00 UTC)
+    const availableSlots: string[] = [];
+    const workStartHour = 9;
+    const workEndHour = 18;
+    const slotInterval = 60; // Интервал между слотами в минутах
+
+    for (let hour = workStartHour; hour < workEndHour; hour++) {
+      for (let minute = 0; minute < 60; minute += slotInterval) {
+        const slotStart = new Date(targetDate);
+        slotStart.setUTCHours(hour, minute, 0, 0);
+
+        // Пропускаем слоты в прошлом
+        if (slotStart < new Date()) {
+          continue;
+        }
+
+        const slotEnd = addMinutesToUTC(slotStart, serviceDuration);
+
+        // Проверяем что слот не выходит за рабочие часы
+        if (slotEnd.getUTCHours() > workEndHour) {
+          continue;
+        }
+
+        // Проверяем что слот не пересекается с существующими записями
+        const isAvailable = !existingAppointments.some(apt => {
+          const aptStart = apt.startAt;
+          const aptEnd = apt.endAt;
+
+          // Проверяем пересечение: новый слот начинается внутри существующей записи
+          // или существующая запись начинается внутри нового слота
+          return (
+            (slotStart >= aptStart && slotStart < aptEnd) ||
+            (aptStart >= slotStart && aptStart < slotEnd)
+          );
+        });
+
+        if (isAvailable) {
+          availableSlots.push(formatUTCToISO(slotStart));
+        }
+      }
+    }
+
+    const response = TimeslotsResponseSchema.parse({
+      available: availableSlots,
+    });
+
+    return res.json(response);
+  } catch (error) {
+    console.error('[TIMESLOTS] Error:', error);
+
+    const { slug: slugParam } = req.params;
+
+    if (error instanceof MasterNotFoundError) {
+      return res.status(404).json({
+        error: 'Master not found',
+        message: `Мастер с slug '${slugParam}' не найден`,
+      });
+    }
+
+    if (error instanceof MasterInactiveError) {
+      return res.status(404).json({
+        error: 'Master inactive',
+        message: `Мастер '${slugParam}' неактивен`,
+      });
+    }
+
     return res.status(500).json({
       error: 'Internal server error',
       message: 'Внутренняя ошибка сервера',

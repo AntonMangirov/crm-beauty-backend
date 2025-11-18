@@ -2,9 +2,14 @@ import { Router } from 'express';
 import {
   getPublicProfileBySlug,
   bookPublicSlot,
+  getTimeslots,
 } from '../controllers/publicController';
 import { validate } from '../middleware/validate';
-import { BookingRequestSchema, SlugParamSchema } from '../schemas/public';
+import {
+  BookingRequestSchema,
+  SlugParamSchema,
+  TimeslotsQuerySchema,
+} from '../schemas/public';
 
 const router = Router();
 
@@ -12,6 +17,11 @@ router.get(
   '/:slug',
   validate({ params: SlugParamSchema }),
   getPublicProfileBySlug
+);
+router.get(
+  '/:slug/timeslots',
+  validate({ params: SlugParamSchema, query: TimeslotsQuerySchema }),
+  getTimeslots
 );
 router.post(
   '/:slug/book',
