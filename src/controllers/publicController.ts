@@ -26,6 +26,7 @@ export async function getPublicProfileBySlug(req: Request, res: Response) {
     const user = await prisma.user.findUnique({
       where: { slug },
       select: {
+        slug: true,
         name: true,
         photoUrl: true,
         description: true,
@@ -53,6 +54,7 @@ export async function getPublicProfileBySlug(req: Request, res: Response) {
     }
 
     const response = PublicProfileResponseSchema.parse({
+      slug: user.slug,
       name: user.name,
       photoUrl: user.photoUrl,
       description: user.description,

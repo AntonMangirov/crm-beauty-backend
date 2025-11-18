@@ -35,6 +35,24 @@
 ### Публичные маршруты
 
 - `GET /api/public/:slug` — профиль мастера по слагу
+  - Ответ:
+    ```json
+    {
+      "slug": "string",
+      "name": "string",
+      "photoUrl": "string | null",
+      "description": "string | null",
+      "address": "string | null",
+      "services": [
+        {
+          "id": "string",
+          "name": "string",
+          "price": "string",
+          "durationMin": number
+        }
+      ]
+    }
+    ```
 - `POST /api/public/:slug/book` — создание записи клиента к мастеру
 
 ### Услуги
@@ -73,7 +91,30 @@ Authorization: Bearer <token>
 
 - Helmet, CORS, очистка ввода, лимитер запросов. См. `src/middleware/security.ts`.
 
+### Приватные маршруты (требуют аутентификации)
+
+- `GET /api/users` — список всех пользователей (защищён, требует JWT)
+- `GET /api/appointments?dateFrom&dateTo` — список встреч мастера (см. раздел "Встречи")
+
 ### Статус сервера
 
 - `GET /api/health` — статус
 - `GET /api/db/status` — проверка соединения с БД
+
+### Конфигурация
+
+- `.env.example` — пример файла с переменными окружения
+  - `PORT` — порт сервера (по умолчанию 3000)
+  - `NODE_ENV` — окружение (development/production)
+  - `DATABASE_URL` — строка подключения к PostgreSQL
+  - `JWT_SECRET` — секретный ключ для JWT токенов
+  - `REDIS_URL` — URL для Redis (или `REDIS_HOST` + `REDIS_PORT`)
+
+### CORS
+
+Все эндпоинты настроены с CORS:
+- Публичные эндпоинты (`/api/public`) — более мягкая конфигурация
+- Приватные эндпоинты (`/api/auth`, `/api/appointments`, `/api/users`) — строгая конфигурация с credentials
+- Настройки в `src/middleware/cors.ts`
+
+

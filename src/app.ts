@@ -103,8 +103,8 @@ app.get('/api/db/status', async (req, res) => {
   }
 });
 
-// Get all users
-app.get('/api/users', async (req, res) => {
+// Get all users (защищённый эндпоинт для админов)
+app.get('/api/users', corsConfig, auth, async (req, res) => {
   try {
     const users = await prisma.user.findMany({
       select: {
@@ -128,7 +128,7 @@ app.get('/api/users', async (req, res) => {
 
 // Приватный список встреч мастера (по userId из токена)
 // GET /api/appointments?dateFrom&dateTo
-app.get('/api/appointments', auth, async (req, res) => {
+app.get('/api/appointments', corsConfig, auth, async (req, res) => {
   try {
     const userId = req.user?.id;
     if (!userId) {
