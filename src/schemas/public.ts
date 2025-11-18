@@ -9,10 +9,13 @@ export const ServiceSchema = z.object({
 });
 
 export const PublicProfileResponseSchema = z.object({
+  slug: z.string(),
   name: z.string(),
   photoUrl: z.string().url().nullable().optional(),
   description: z.string().nullable().optional(),
   address: z.string().nullable().optional(),
+  lat: z.number().nullable().optional(),
+  lng: z.number().nullable().optional(),
   services: z.array(ServiceSchema),
 });
 export type PublicProfileResponse = z.infer<typeof PublicProfileResponseSchema>;
