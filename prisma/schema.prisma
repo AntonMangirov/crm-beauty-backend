@@ -17,6 +17,8 @@ model User {
   description   String?
   photoUrl      String?
   address       String?
+  lat           Decimal?      @db.Decimal(10, 8)  // Широта (latitude)
+  lng           Decimal?      @db.Decimal(11, 8)  // Долгота (longitude)
   isActive      Boolean       @default(true)
   role          UserRole      @default(MASTER)
   createdAt     DateTime      @default(now())

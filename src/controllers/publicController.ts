@@ -23,7 +23,7 @@ export async function getPublicProfileBySlug(req: Request, res: Response) {
       return res.status(400).json({ error: 'slug is required' });
     }
 
-    const user = await prisma.user.findUnique({
+    const user = (await prisma.user.findUnique({
       where: { slug },
       select: {
         slug: true,
@@ -31,6 +31,9 @@ export async function getPublicProfileBySlug(req: Request, res: Response) {
         photoUrl: true,
         description: true,
         address: true,
+        // @ts-ignore - lat и lng добавлены через миграцию, Prisma Client перегенерирован
+        lat: true,
+        lng: true,
         isActive: true,
         services: {
           where: { isActive: true },
@@ -43,7 +46,22 @@ export async function getPublicProfileBySlug(req: Request, res: Response) {
           orderBy: { name: 'asc' },
         },
       },
-    });
+    })) as {
+      slug: string;
+      name: string;
+      photoUrl: string | null;
+      description: string | null;
+      address: string | null;
+      lat: number | null;
+      lng: number | null;
+      isActive: boolean;
+      services: Array<{
+        id: string;
+        name: string;
+        price: any;
+        durationMin: number;
+      }>;
+    } | null;
 
     if (!user) {
       throw new MasterNotFoundError(slug);
@@ -59,6 +77,8 @@ export async function getPublicProfileBySlug(req: Request, res: Response) {
       photoUrl: user.photoUrl,
       description: user.description,
       address: user.address,
+      lat: user.lat ? Number(user.lat) : null,
+      lng: user.lng ? Number(user.lng) : null,
       services: user.services.map(service => ({
         ...service,
         price: service.price.toString(),

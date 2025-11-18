@@ -43,6 +43,8 @@
       "photoUrl": "string | null",
       "description": "string | null",
       "address": "string | null",
+      "lat": "number | null",
+      "lng": "number | null",
       "services": [
         {
           "id": "string",
@@ -113,8 +115,7 @@ Authorization: Bearer <token>
 ### CORS
 
 Все эндпоинты настроены с CORS:
+
 - Публичные эндпоинты (`/api/public`) — более мягкая конфигурация
 - Приватные эндпоинты (`/api/auth`, `/api/appointments`, `/api/users`) — строгая конфигурация с credentials
 - Настройки в `src/middleware/cors.ts`
-
-
