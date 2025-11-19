@@ -37,9 +37,28 @@ const coordinates = await geocodeAndCache(prisma, userId, address);
 ## Ограничения Nominatim
 
 - Rate limit: 1 запрос в секунду (соблюдается автоматически)
-- Требуется User-Agent заголовок
+- Требуется User-Agent заголовок с контактной информацией
+- Может возвращать 403 Forbidden при неправильном User-Agent или слишком частых запросах
 - Точность может варьироваться в зависимости от региона
 - Для российских адресов точность может быть ниже, чем у специализированных сервисов
+
+## Решение проблемы 403 Forbidden
+
+Если Nominatim возвращает 403:
+
+1. **Установите правильный User-Agent в .env:**
+   ```env
+   GEOCODING_USER_AGENT="YourApp/1.0 (https://yourwebsite.com; your-email@example.com)"
+   ```
+
+2. **Используйте скрипт для ручного геокодинга:**
+   ```bash
+   npx ts-node scripts/geocode-masters.ts
+   # Или для конкретного мастера:
+   npx ts-node scripts/geocode-masters.ts anna-krasotkina
+   ```
+
+3. **Заполните координаты вручную в БД** (для тестирования)
 
 ## Альтернативные сервисы
 

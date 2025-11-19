@@ -52,13 +52,21 @@ export async function geocodeAddress(
 
     // Формируем URL для Nominatim API
     const encodedAddress = encodeURIComponent(address);
-    const url = `https://nominatim.openstreetmap.org/search?q=${encodedAddress}&format=json&limit=1&addressdetails=1`;
+    // Используем более простой endpoint без addressdetails для уменьшения нагрузки
+    const url = `https://nominatim.openstreetmap.org/search?q=${encodedAddress}&format=json&limit=1`;
 
-    // Делаем запрос с User-Agent (требуется Nominatim)
+    // Делаем запрос с правильным User-Agent (требуется Nominatim)
+    // Nominatim требует уникальный User-Agent с контактной информацией
+    // Формат: AppName/Version (website; email)
+    const userAgent =
+      process.env.GEOCODING_USER_AGENT ||
+      'CRM-Beauty-Backend/1.0 (http://localhost:3000; admin@localhost)';
+
     const response = await global.fetch(url, {
       headers: {
-        'User-Agent':
-          'CRM-Beauty-Backend/1.0 (contact: your-email@example.com)', // Замените на ваш email
+        'User-Agent': userAgent,
+        Accept: 'application/json',
+        'Accept-Language': 'ru-RU,ru;q=0.9',
       },
     });
 

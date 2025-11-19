@@ -16,6 +16,9 @@ import {
 } from '../errors/BusinessErrors';
 import { addMinutesToUTC, formatUTCToISO } from '../utils/timeUtils';
 import { TimeslotsResponseSchema } from '../schemas/public';
+import { geocodeAndCache } from '../utils/geocoding';
+import { verifyCaptcha } from '../utils/recaptcha';
+import { normalizePhone } from '../utils/validation';
 
 export async function getPublicProfileBySlug(req: Request, res: Response) {
   try {
@@ -27,6 +30,7 @@ export async function getPublicProfileBySlug(req: Request, res: Response) {
     const user = (await prisma.user.findUnique({
       where: { slug },
       select: {
+        id: true,
         slug: true,
         name: true,
         photoUrl: true,
@@ -48,6 +52,7 @@ export async function getPublicProfileBySlug(req: Request, res: Response) {
         },
       },
     })) as {
+      id: string;
       slug: string;
       name: string;
       photoUrl: string | null;
@@ -59,7 +64,7 @@ export async function getPublicProfileBySlug(req: Request, res: Response) {
       services: Array<{
         id: string;
         name: string;
-        price: any;
+        price: string | number | bigint;
         durationMin: number;
       }>;
     } | null;
@@ -72,14 +77,30 @@ export async function getPublicProfileBySlug(req: Request, res: Response) {
       throw new MasterInactiveError(slug);
     }
 
+    // Автоматический геокодинг: если координат нет, но есть адрес - пытаемся получить координаты
+    // ВАЖНО: Геокодинг выполняется асинхронно в фоне, чтобы не блокировать ответ
+    const finalLat = user.lat ? Number(user.lat) : null;
+    const finalLng = user.lng ? Number(user.lng) : null;
+
+    // Запускаем геокодинг в фоне (не блокируем ответ)
+    if ((!finalLat || !finalLng) && user.address) {
+      // Не ждём результат - выполняем в фоне
+      geocodeAndCache(prisma, user.id, user.address).catch(error => {
+        console.error(
+          `[GEOCODING] Background geocoding failed for user ${user.id}:`,
+          error
+        );
+      });
+    }
+
     const response = PublicProfileResponseSchema.parse({
       slug: user.slug,
       name: user.name,
       photoUrl: user.photoUrl,
       description: user.description,
       address: user.address,
-      lat: user.lat ? Number(user.lat) : null,
-      lng: user.lng ? Number(user.lng) : null,
+      lat: finalLat,
+      lng: finalLng,
       services: user.services.map(service => ({
         ...service,
         price: service.price.toString(),
@@ -120,16 +141,43 @@ export async function bookPublicSlot(req: Request, res: Response) {
     console.log(`[BOOKING] Мастер найден: ${master.name} (ID: ${master.id})`);
 
     console.log(`[BOOKING] Использование данных из валидированного body...`);
-    const { name, phone, serviceId, startAt, comment } = req.body as {
-      name: string;
-      phone: string;
-      serviceId: string;
-      startAt: Date;
-      comment?: string;
-    };
+    const { name, phone, serviceId, startAt, comment, recaptchaToken } =
+      req.body as {
+        name: string;
+        phone: string;
+        serviceId: string;
+        startAt: Date;
+        comment?: string;
+        recaptchaToken: string;
+      };
+
+    // Проверка reCAPTCHA перед обработкой записи
+    console.log(`[BOOKING] Проверка reCAPTCHA...`);
+    const isCaptchaValid = await verifyCaptcha(recaptchaToken);
+    if (!isCaptchaValid) {
+      console.log(`[BOOKING] Ошибка: reCAPTCHA проверка не пройдена`);
+      return res.status(400).json({
+        error: 'reCAPTCHA verification failed',
+        message: 'Проверка на бота не пройдена. Пожалуйста, попробуйте снова.',
+      });
+    }
+    console.log(`[BOOKING] reCAPTCHA проверка пройдена успешно`);
+
+    // Нормализуем телефон к единому формату
+    const normalizedPhone = normalizePhone(phone);
+    if (!normalizedPhone) {
+      console.log(
+        `[BOOKING] Ошибка: не удалось нормализовать телефон: ${phone}`
+      );
+      return res.status(400).json({
+        error: 'Invalid phone format',
+        message: 'Неверный формат телефона',
+      });
+    }
+
     console.log(`[BOOKING] Валидация прошла успешно. Данные:`, {
       name,
-      phone,
+      phone: normalizedPhone,
       serviceId,
       startAt,
       comment,
@@ -141,12 +189,23 @@ export async function bookPublicSlot(req: Request, res: Response) {
     );
     const service = await prisma.service.findFirst({
       where: { id: serviceId, masterId: master.id, isActive: true },
+      select: {
+        id: true,
+        name: true,
+        price: true,
+        durationMin: true,
+        isActive: true,
+      },
     });
     if (!service) {
       console.log(
-        `[BOOKING] Ошибка: услуга '${serviceId}' не найдена или не принадлежит мастеру '${master.id}'`
+        `[BOOKING] Ошибка: услуга '${serviceId}' не найдена, неактивна или не принадлежит мастеру '${master.id}'`
       );
-      throw new ServiceNotFoundError(serviceId);
+      return res.status(400).json({
+        error: 'Service not found',
+        message:
+          'Услуга не найдена, неактивна или не принадлежит данному мастеру',
+      });
     }
 
     console.log(
@@ -162,18 +221,20 @@ export async function bookPublicSlot(req: Request, res: Response) {
     // 4) Используем транзакцию для защиты от double-booking
     console.log(`[BOOKING] Начало транзакции для создания записи...`);
     const appointment = await prisma.$transaction(async tx => {
-      // 4.1) Находим/создаем клиента по телефону
-      console.log(`[BOOKING] Поиск клиента по телефону: ${phone}`);
+      // 4.1) Находим/создаем клиента по телефону (используем нормализованный)
+      console.log(`[BOOKING] Поиск клиента по телефону: ${normalizedPhone}`);
       let client = await tx.client.findFirst({
-        where: { masterId: master.id, phone },
+        where: { masterId: master.id, phone: normalizedPhone },
       });
       if (!client) {
-        console.log(`[BOOKING] Создание нового клиента: ${name} (${phone})`);
+        console.log(
+          `[BOOKING] Создание нового клиента: ${name} (${normalizedPhone})`
+        );
         client = await tx.client.create({
           data: {
             masterId: master.id,
             name,
-            phone,
+            phone: normalizedPhone,
           },
         });
       } else {

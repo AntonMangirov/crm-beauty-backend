@@ -19,7 +19,11 @@
     "db:studio": "prisma studio",
     "db:reset": "prisma migrate reset",
     "prepare": "husky",
-    "seed": "ts-node prisma/seed.ts"
+    "seed": "ts-node prisma/seed.ts",
+    "geocode": "ts-node scripts/geocode-masters.ts",
+    "set-test-coords": "ts-node scripts/set-test-coordinates.ts",
+    "update-address": "ts-node scripts/update-master-address.ts",
+    "fix-address": "ts-node scripts/fix-address.ts"
   },
   "repository": {
     "type": "git",
