@@ -160,3 +160,4 @@ GET /api/me/appointments?status=CONFIRMED&dateFrom=2024-01-01T00:00:00Z
 - `completedAppointments` - количество завершенных записей
 - `totalClients` - общее количество клиентов
 
+

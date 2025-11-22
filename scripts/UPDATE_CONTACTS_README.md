@@ -59,3 +59,4 @@ UPDATE "User" SET rating = 4.8 WHERE slug = 'anna-krasotkina';
 
 После миграции перезапустите backend сервер, чтобы изменения вступили в силу.
 
+

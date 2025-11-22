@@ -67,3 +67,4 @@ WHERE table_name = 'User'
 AND column_name IN ('vkUrl', 'telegramUrl', 'whatsappUrl', 'backgroundImageUrl', 'rating');
 ```
 
+

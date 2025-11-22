@@ -11,3 +11,4 @@ ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "rating" DECIMAL(3,2);
 -- Добавляем поле в таблицу Service
 ALTER TABLE "Service" ADD COLUMN IF NOT EXISTS "photoUrl" TEXT;
 
+

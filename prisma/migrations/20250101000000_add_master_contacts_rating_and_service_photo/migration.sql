@@ -8,3 +8,4 @@ ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "rating" DECIMAL(3,2);
 -- AlterTable
 ALTER TABLE "Service" ADD COLUMN IF NOT EXISTS "photoUrl" TEXT;
 
+
