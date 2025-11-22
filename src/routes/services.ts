@@ -22,8 +22,8 @@ router.post('/', createService);
 // GET /api/services/:id - получить услугу по ID
 router.get('/:id', getServiceById);
 
-// PUT /api/services/:id - обновить услугу
-router.put('/:id', updateService);
+// PATCH /api/services/:id - обновить услугу
+router.patch('/:id', updateService);
 
 // DELETE /api/services/:id - удалить услугу
 router.delete('/:id', deleteService);

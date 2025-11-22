@@ -64,7 +64,7 @@ Authorization: Bearer <token>
 ### 4. Обновить услугу
 
 ```
-PUT /api/services/:id
+PATCH /api/services/:id
 Authorization: Bearer <token>
 Content-Type: application/json
 ```

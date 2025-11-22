@@ -134,7 +134,7 @@ GET /api/me/appointments?status=CONFIRMED&dateFrom=2024-01-01T00:00:00Z
 ### GET /api/me/services/:id
 Получить услугу по ID.
 
-### PUT /api/me/services/:id
+### PATCH /api/me/services/:id
 Обновить услугу.
 
 **Тело запроса:**

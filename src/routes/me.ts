@@ -41,8 +41,8 @@ router.post('/services', createService);
 // GET /api/me/services/:id - получить услугу по ID
 router.get('/services/:id', getServiceById);
 
-// PUT /api/me/services/:id - обновить услугу
-router.put('/services/:id', updateService);
+// PATCH /api/me/services/:id - обновить услугу
+router.patch('/services/:id', updateService);
 
 // DELETE /api/me/services/:id - удалить услугу
 router.delete('/services/:id', deleteService);
