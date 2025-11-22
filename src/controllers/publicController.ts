@@ -19,6 +19,7 @@ import { TimeslotsResponseSchema } from '../schemas/public';
 import { geocodeAndCache } from '../utils/geocoding';
 import { verifyCaptcha } from '../utils/recaptcha';
 import { normalizePhone } from '../utils/validation';
+import { logError, logBooking, logWarn } from '../utils/logger';
 
 export async function getPublicProfileBySlug(req: Request, res: Response) {
   try {
@@ -116,31 +117,40 @@ export async function getPublicProfileBySlug(req: Request, res: Response) {
 export async function bookPublicSlot(req: Request, res: Response) {
   const { slug } = req.params;
 
-  console.log(`[BOOKING] Начало обработки записи для мастера: ${slug}`);
-  console.log(`[BOOKING] Тело запроса:`, JSON.stringify(req.body, null, 2));
+  logBooking('Начало обработки записи', {
+    slug,
+    body: req.body,
+    ip: req.ip,
+    userAgent: req.get('user-agent'),
+  });
 
   if (!slug) {
-    console.log(`[BOOKING] Ошибка: slug не предоставлен`);
+    logError('Slug не предоставлен', undefined, { path: req.path });
     return res.status(400).json({ error: 'slug is required' });
   }
 
   try {
     // 1) Находим мастера по slug
-    console.log(`[BOOKING] Поиск мастера по slug: ${slug}`);
+    logBooking('Поиск мастера', { slug });
     const master = await prisma.user.findUnique({ where: { slug } });
     if (!master) {
-      console.log(`[BOOKING] Ошибка: мастер с slug '${slug}' не найден`);
+      logError('Мастер не найден', undefined, { slug, path: req.path });
       throw new MasterNotFoundError(slug);
     }
 
     if (!master.isActive) {
-      console.log(`[BOOKING] Ошибка: мастер '${slug}' неактивен`);
+      logWarn('Попытка записи к неактивному мастеру', {
+        slug,
+        masterId: master.id,
+      });
       throw new MasterInactiveError(slug);
     }
 
-    console.log(`[BOOKING] Мастер найден: ${master.name} (ID: ${master.id})`);
+    logBooking('Мастер найден', {
+      masterId: master.id,
+      masterName: master.name,
+    });
 
-    console.log(`[BOOKING] Использование данных из валидированного body...`);
     const { name, phone, serviceId, startAt, comment, recaptchaToken } =
       req.body as {
         name: string;
@@ -148,45 +158,73 @@ export async function bookPublicSlot(req: Request, res: Response) {
         serviceId: string;
         startAt: Date;
         comment?: string;
-        recaptchaToken: string;
+        recaptchaToken?: string;
       };
 
     // Проверка reCAPTCHA перед обработкой записи
-    console.log(`[BOOKING] Проверка reCAPTCHA...`);
-    const isCaptchaValid = await verifyCaptcha(recaptchaToken);
-    if (!isCaptchaValid) {
-      console.log(`[BOOKING] Ошибка: reCAPTCHA проверка не пройдена`);
-      return res.status(400).json({
-        error: 'reCAPTCHA verification failed',
-        message: 'Проверка на бота не пройдена. Пожалуйста, попробуйте снова.',
-      });
+    // В dev режиме, если токен не предоставлен, пропускаем проверку
+    if (recaptchaToken) {
+      logBooking('Проверка reCAPTCHA', { masterId: master.id });
+      const isCaptchaValid = await verifyCaptcha(recaptchaToken);
+      if (!isCaptchaValid) {
+        logWarn('reCAPTCHA проверка не пройдена', {
+          masterId: master.id,
+          slug,
+          ip: req.ip,
+        });
+        return res.status(400).json({
+          error: 'reCAPTCHA verification failed',
+          message:
+            'Проверка на бота не пройдена. Пожалуйста, попробуйте снова.',
+        });
+      }
+      logBooking('reCAPTCHA проверка пройдена', { masterId: master.id });
+    } else {
+      // В dev режиме пропускаем проверку, если токен не предоставлен
+      if (process.env.NODE_ENV === 'production') {
+        logWarn('reCAPTCHA токен не предоставлен в production', {
+          masterId: master.id,
+          slug,
+          ip: req.ip,
+        });
+        return res.status(400).json({
+          error: 'reCAPTCHA token required',
+          message: 'Токен reCAPTCHA обязателен',
+        });
+      }
+      logBooking(
+        'reCAPTCHA проверка пропущена (dev режим, токен не предоставлен)',
+        {
+          masterId: master.id,
+        }
+      );
     }
-    console.log(`[BOOKING] reCAPTCHA проверка пройдена успешно`);
 
     // Нормализуем телефон к единому формату
     const normalizedPhone = normalizePhone(phone);
     if (!normalizedPhone) {
-      console.log(
-        `[BOOKING] Ошибка: не удалось нормализовать телефон: ${phone}`
-      );
+      logError('Неверный формат телефона', undefined, {
+        phone,
+        masterId: master.id,
+        serviceId,
+      });
       return res.status(400).json({
         error: 'Invalid phone format',
         message: 'Неверный формат телефона',
       });
     }
 
-    console.log(`[BOOKING] Валидация прошла успешно. Данные:`, {
-      name,
-      phone: normalizedPhone,
+    logBooking('Валидация прошла успешно', {
+      masterId: master.id,
       serviceId,
-      startAt,
-      comment,
+      startAt:
+        startAt instanceof Date ? startAt.toISOString() : String(startAt),
+      phone: normalizedPhone,
+      hasComment: !!comment,
     });
 
     // 3) Проверяем услугу принадлежит мастеру и активна
-    console.log(
-      `[BOOKING] Поиск услуги: ${serviceId} для мастера: ${master.id}`
-    );
+    logBooking('Поиск услуги', { serviceId, masterId: master.id });
     const service = await prisma.service.findFirst({
       where: { id: serviceId, masterId: master.id, isActive: true },
       select: {
@@ -198,9 +236,11 @@ export async function bookPublicSlot(req: Request, res: Response) {
       },
     });
     if (!service) {
-      console.log(
-        `[BOOKING] Ошибка: услуга '${serviceId}' не найдена, неактивна или не принадлежит мастеру '${master.id}'`
-      );
+      logError('Услуга не найдена или неактивна', undefined, {
+        serviceId,
+        masterId: master.id,
+        slug,
+      });
       return res.status(400).json({
         error: 'Service not found',
         message:
@@ -208,28 +248,36 @@ export async function bookPublicSlot(req: Request, res: Response) {
       });
     }
 
-    console.log(
-      `[BOOKING] Услуга найдена: ${service.name} (${service.durationMin} мин, ${service.price} руб)`
-    );
+    logBooking('Услуга найдена', {
+      serviceId: service.id,
+      serviceName: service.name,
+      durationMin: service.durationMin,
+      price: service.price.toString(),
+    });
 
     const start = startAt; // Уже Date объект из Zod схемы
     const end = addMinutesToUTC(start, service.durationMin);
-    console.log(
-      `[BOOKING] Время записи: ${start.toISOString()} - ${end.toISOString()}`
-    );
+    logBooking('Время записи определено', {
+      start: start.toISOString(),
+      end: end.toISOString(),
+      durationMin: service.durationMin,
+    });
 
     // 4) Используем транзакцию для защиты от double-booking
-    console.log(`[BOOKING] Начало транзакции для создания записи...`);
+    logBooking('Начало транзакции для создания записи', {
+      masterId: master.id,
+    });
     const appointment = await prisma.$transaction(async tx => {
       // 4.1) Находим/создаем клиента по телефону (используем нормализованный)
-      console.log(`[BOOKING] Поиск клиента по телефону: ${normalizedPhone}`);
+      logBooking('Поиск клиента', {
+        phone: normalizedPhone,
+        masterId: master.id,
+      });
       let client = await tx.client.findFirst({
         where: { masterId: master.id, phone: normalizedPhone },
       });
       if (!client) {
-        console.log(
-          `[BOOKING] Создание нового клиента: ${name} (${normalizedPhone})`
-        );
+        logBooking('Создание нового клиента', { name, phone: normalizedPhone });
         client = await tx.client.create({
           data: {
             masterId: master.id,
@@ -238,18 +286,25 @@ export async function bookPublicSlot(req: Request, res: Response) {
           },
         });
       } else {
-        console.log(
-          `[BOOKING] Клиент найден: ${client.name} (ID: ${client.id})`
-        );
+        logBooking('Клиент найден', {
+          clientId: client.id,
+          clientName: client.name,
+        });
         if (!client.name && name) {
-          console.log(`[BOOKING] Обновление имени клиента: ${name}`);
+          logBooking('Обновление имени клиента', {
+            clientId: client.id,
+            newName: name,
+          });
           // Обновим имя если пустое
           await tx.client.update({ where: { id: client.id }, data: { name } });
         }
       }
 
       // 4.2) Проверка пересечения внутри транзакции
-      console.log(`[BOOKING] Проверка конфликтов времени...`);
+      logBooking('Проверка конфликтов времени', {
+        start: start.toISOString(),
+        end: end.toISOString(),
+      });
       const overlapping = await tx.appointment.findFirst({
         where: {
           masterId: master.id,
@@ -265,16 +320,29 @@ export async function bookPublicSlot(req: Request, res: Response) {
       });
 
       if (overlapping) {
-        console.log(
-          `[BOOKING] Ошибка: конфликт времени с записью ID: ${overlapping.id}`
-        );
+        logError('Конфликт времени обнаружен', undefined, {
+          requestedStart: start.toISOString(),
+          requestedEnd: end.toISOString(),
+          conflictingStart: overlapping.startAt.toISOString(),
+          conflictingEnd: overlapping.endAt.toISOString(),
+          masterId: master.id,
+          serviceId,
+        });
         throw new TimeSlotConflictError(start.toISOString(), end.toISOString());
       }
 
-      console.log(`[BOOKING] Конфликтов времени не найдено`);
+      logBooking('Конфликтов времени не найдено', {
+        start: start.toISOString(),
+        end: end.toISOString(),
+      });
 
       // 4.3) Создаем встречу
-      console.log(`[BOOKING] Создание записи...`);
+      logBooking('Создание записи', {
+        clientId: client.id,
+        serviceId: service.id,
+        start: start.toISOString(),
+        end: end.toISOString(),
+      });
       const appointment = await tx.appointment.create({
         data: {
           masterId: master.id,
@@ -291,14 +359,18 @@ export async function bookPublicSlot(req: Request, res: Response) {
           startAt: true,
           endAt: true,
           status: true,
+          clientId: true,
+          serviceId: true,
         },
       });
 
-      console.log(`[BOOKING] Запись создана успешно: ID ${appointment.id}`);
+      logBooking('Запись создана успешно', { appointmentId: appointment.id });
       return appointment;
     });
 
-    console.log(`[BOOKING] Добавление задачи уведомления...`);
+    logBooking('Добавление задачи уведомления', {
+      appointmentId: appointment.id,
+    });
     (async () => {
       try {
         const notificationData: NotificationData = {
@@ -344,14 +416,14 @@ export async function bookPublicSlot(req: Request, res: Response) {
 
         await Promise.race([updatePromise, updateTimeoutPromise]);
 
-        console.log(
-          `[BOOKING] Задача уведомления ${notificationJob.id} добавлена для записи ${appointment.id}`
-        );
+        logBooking('Задача уведомления добавлена', {
+          appointmentId: appointment.id,
+          notificationJobId: notificationJob.id.toString(),
+        });
       } catch (notificationError) {
-        console.error(
-          `[BOOKING] Ошибка добавления уведомления:`,
-          notificationError
-        );
+        logError('Ошибка добавления уведомления', notificationError, {
+          appointmentId: appointment.id,
+        });
       }
     })();
 
@@ -362,10 +434,22 @@ export async function bookPublicSlot(req: Request, res: Response) {
       status: appointment.status,
     });
 
-    console.log(`[BOOKING] Успешно! Запись создана:`, response);
+    logBooking('Запись успешно создана', {
+      appointmentId: appointment.id,
+      masterId: master.id,
+      clientId: appointment.clientId,
+      serviceId: appointment.serviceId,
+      start: appointment.startAt.toISOString(),
+      end: appointment.endAt.toISOString(),
+    });
     return res.status(201).json(response);
   } catch (error) {
-    console.error(`[BOOKING] Ошибка при создании записи:`, error);
+    // Логируем все ошибки в файл
+    logError('Ошибка при создании записи', error, {
+      slug,
+      body: req.body,
+      ip: req.ip,
+    });
 
     if (error instanceof MasterNotFoundError) {
       return res.status(404).json({
@@ -395,7 +479,7 @@ export async function bookPublicSlot(req: Request, res: Response) {
       });
     }
 
-    console.error(`[BOOKING] Необработанная ошибка:`, error);
+    // Необработанная ошибка
     return res.status(500).json({
       error: 'Internal server error',
       message: 'Внутренняя ошибка сервера',
@@ -410,12 +494,30 @@ export async function bookPublicSlot(req: Request, res: Response) {
 export async function getTimeslots(req: Request, res: Response) {
   try {
     const { slug } = req.params;
-    const { date, serviceId } = req.query as {
-      date?: string;
-      serviceId?: string;
-    };
+    // Используем валидированные данные из middleware, если они есть
+    const validatedQuery = (req as any).validatedQuery as
+      | {
+          date?: string;
+          serviceId?: string;
+        }
+      | undefined;
+    const { date, serviceId } =
+      validatedQuery ||
+      (req.query as {
+        date?: string;
+        serviceId?: string;
+      });
+
+    logBooking('Запрос временных слотов', {
+      slug,
+      date,
+      serviceId,
+    });
 
     if (!slug) {
+      logError('Slug не предоставлен для timeslots', undefined, {
+        path: req.path,
+      });
       return res.status(400).json({ error: 'slug is required' });
     }
 
@@ -440,9 +542,28 @@ export async function getTimeslots(req: Request, res: Response) {
     let targetDate: Date;
     if (date) {
       // Если дата передана, парсим её (ожидаем формат YYYY-MM-DD)
+      // Проверяем формат даты перед парсингом
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+        logError('Неверный формат даты в timeslots', undefined, {
+          date,
+          slug,
+        });
+        return res.status(400).json({
+          error: 'Invalid date format',
+          message: 'Дата должна быть в формате YYYY-MM-DD',
+        });
+      }
+
       const parsedDate = new Date(date + 'T00:00:00.000Z');
       if (isNaN(parsedDate.getTime())) {
-        return res.status(400).json({ error: 'Invalid date format' });
+        logError('Не удалось распарсить дату в timeslots', undefined, {
+          date,
+          slug,
+        });
+        return res.status(400).json({
+          error: 'Invalid date format',
+          message: 'Неверный формат даты',
+        });
       }
       targetDate = parsedDate;
     } else {
@@ -539,9 +660,19 @@ export async function getTimeslots(req: Request, res: Response) {
       available: availableSlots,
     });
 
+    logBooking('Временные слоты успешно получены', {
+      slug: req.params.slug,
+      date: targetDate.toISOString().split('T')[0],
+      slotsCount: availableSlots.length,
+    });
+
     return res.json(response);
   } catch (error) {
-    console.error('[TIMESLOTS] Error:', error);
+    logError('Ошибка получения временных слотов', error, {
+      slug: req.params.slug,
+      date: req.query.date as string,
+      serviceId: req.query.serviceId as string,
+    });
 
     const { slug: slugParam } = req.params;
 

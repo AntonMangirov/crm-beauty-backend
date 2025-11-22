@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { Prisma } from '@prisma/client';
 import { ZodError } from 'zod';
 import { AppError } from '../errors/AppError';
+import { logError } from '../utils/logger';
 
 interface ErrorResponse {
   error: string;
@@ -23,13 +24,13 @@ export const errorHandler = (
   let code: string | undefined;
   let details: any = undefined;
 
-  // Логируем ошибку
-  console.error('Error occurred:', {
-    message: error.message,
-    stack: error.stack,
+  // Логируем ошибку в файл
+  logError('Ошибка обработки запроса', error, {
     url: req.url,
     method: req.method,
-    timestamp: new Date().toISOString(),
+    path: req.path,
+    ip: req.ip,
+    userAgent: req.get('user-agent'),
   });
 
   // Обработка наших типизированных ошибок

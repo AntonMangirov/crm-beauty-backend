@@ -58,7 +58,7 @@ export const BookingRequestSchema = z
       .string()
       .max(500, 'Комментарий не должен превышать 500 символов')
       .optional(),
-    recaptchaToken: z.string().min(1, 'reCAPTCHA токен обязателен'),
+    recaptchaToken: z.string().min(1).optional(),
   })
   .refine(
     data => {

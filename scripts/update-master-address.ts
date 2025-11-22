@@ -64,3 +64,4 @@ const address = process.argv[3]; // Опциональный адрес
 
 updateMasterAddress(slug, address);
 
+

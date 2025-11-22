@@ -128,3 +128,4 @@ reCAPTCHA v3 возвращает score (0.0 - 1.0), который показы
 - **Cloudflare Turnstile** — бесплатная альтернатива
 - **Собственные методы защиты** — rate limiting, honeypot поля и т.д.
 
+
