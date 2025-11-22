@@ -5,6 +5,7 @@ import { Prisma } from '@prisma/client';
 import authRouter from './routes/auth';
 import publicRouter from './routes/public';
 import servicesRouter from './routes/services';
+import meRouter from './routes/me';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler';
 import {
   helmetConfig,
@@ -63,6 +64,7 @@ app.get('/', (req, res) => {
       public: '/api/public',
       auth: '/api/auth',
       services: '/api/services',
+      me: '/api/me',
     },
     timestamp: new Date().toISOString(),
   });
@@ -72,6 +74,7 @@ app.get('/', (req, res) => {
 app.use('/api/auth', authCorsConfig, authRateLimit, authRouter);
 app.use('/api/public', publicCorsConfig, publicRateLimit, publicRouter);
 app.use('/api/services', corsConfig, servicesRouter);
+app.use('/api/me', corsConfig, meRouter);
 
 // 8. Helmet применяется ПОСЛЕ CORS, чтобы не блокировать заголовки
 app.use(helmetConfig);

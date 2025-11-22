@@ -23,7 +23,9 @@
     "geocode": "ts-node scripts/geocode-masters.ts",
     "set-test-coords": "ts-node scripts/set-test-coordinates.ts",
     "update-address": "ts-node scripts/update-master-address.ts",
-    "fix-address": "ts-node scripts/fix-address.ts"
+    "fix-address": "ts-node scripts/fix-address.ts",
+    "update-contacts": "ts-node scripts/update-master-contacts.ts",
+    "apply-migration": "ts-node scripts/apply-migration-manually.ts"
   },
   "repository": {
     "type": "git",

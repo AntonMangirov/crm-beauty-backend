@@ -12,6 +12,7 @@ export const ServiceSchema = z.object({
   name: z.string(),
   price: z.union([z.string(), z.number()]),
   durationMin: z.number().int(),
+  photoUrl: z.string().url().nullable().optional(),
 });
 
 export const PublicProfileResponseSchema = z.object({
@@ -20,8 +21,14 @@ export const PublicProfileResponseSchema = z.object({
   photoUrl: z.string().url().nullable().optional(),
   description: z.string().nullable().optional(),
   address: z.string().nullable().optional(),
+  phone: z.string().nullable().optional(),
   lat: z.number().nullable().optional(),
   lng: z.number().nullable().optional(),
+  vkUrl: z.string().url().nullable().optional(),
+  telegramUrl: z.string().url().nullable().optional(),
+  whatsappUrl: z.string().url().nullable().optional(),
+  backgroundImageUrl: z.string().url().nullable().optional(),
+  rating: z.number().min(0).max(5).nullable().optional(),
   services: z.array(ServiceSchema),
 });
 export type PublicProfileResponse = z.infer<typeof PublicProfileResponseSchema>;

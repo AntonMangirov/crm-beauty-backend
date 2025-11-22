@@ -37,9 +37,14 @@ export async function getPublicProfileBySlug(req: Request, res: Response) {
         photoUrl: true,
         description: true,
         address: true,
-        // @ts-ignore - lat и lng добавлены через миграцию, Prisma Client перегенерирован
+        phone: true,
         lat: true,
         lng: true,
+        vkUrl: true,
+        telegramUrl: true,
+        whatsappUrl: true,
+        backgroundImageUrl: true,
+        rating: true,
         isActive: true,
         services: {
           where: { isActive: true },
@@ -48,6 +53,8 @@ export async function getPublicProfileBySlug(req: Request, res: Response) {
             name: true,
             price: true,
             durationMin: true,
+            // @ts-ignore - photoUrl будет добавлен после миграции
+            photoUrl: true,
           },
           orderBy: { name: 'asc' },
         },
@@ -59,14 +66,21 @@ export async function getPublicProfileBySlug(req: Request, res: Response) {
       photoUrl: string | null;
       description: string | null;
       address: string | null;
+      phone: string | null;
       lat: number | null;
       lng: number | null;
+      vkUrl: string | null;
+      telegramUrl: string | null;
+      whatsappUrl: string | null;
+      backgroundImageUrl: string | null;
+      rating: number | null;
       isActive: boolean;
       services: Array<{
         id: string;
         name: string;
         price: string | number | bigint;
         durationMin: number;
+        photoUrl?: string | null;
       }>;
     } | null;
 
@@ -100,11 +114,23 @@ export async function getPublicProfileBySlug(req: Request, res: Response) {
       photoUrl: user.photoUrl,
       description: user.description,
       address: user.address,
+      phone: user.phone,
       lat: finalLat,
       lng: finalLng,
+      vkUrl: user.vkUrl,
+      telegramUrl: user.telegramUrl,
+      whatsappUrl: user.whatsappUrl,
+      backgroundImageUrl: user.backgroundImageUrl,
+      rating:
+        user.rating !== null && user.rating !== undefined
+          ? Number(user.rating)
+          : null,
       services: user.services.map(service => ({
-        ...service,
+        id: service.id,
+        name: service.name,
         price: service.price.toString(),
+        durationMin: service.durationMin,
+        photoUrl: (service as { photoUrl?: string | null }).photoUrl || null,
       })),
     });
     return res.json(response);
