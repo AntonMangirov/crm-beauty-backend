@@ -6,6 +6,8 @@ import {
   ServiceResponseSchema,
   ServicesListResponseSchema,
 } from '../schemas/services';
+import { ServiceNotFoundError } from '../errors/BusinessErrors';
+import { ForbiddenError } from '../errors/AppError';
 
 // Получить все услуги мастера
 export async function getServices(req: Request, res: Response) {
@@ -80,15 +82,29 @@ export async function updateService(req: Request, res: Response) {
       return res.status(400).json({ error: 'Service ID is required' });
     }
 
-    // Проверяем, что услуга принадлежит мастеру
-    const existingService = await prisma.service.findFirst({
-      where: { id, masterId },
+    // Проверяем, существует ли услуга вообще
+    const existingService = await prisma.service.findUnique({
+      where: { id },
     });
 
     if (!existingService) {
-      return res
-        .status(404)
-        .json({ error: 'Service not found or access denied' });
+      const notFoundError = new ServiceNotFoundError(id);
+      return res.status(notFoundError.statusCode).json({
+        error: notFoundError.message,
+        code: notFoundError.code,
+      });
+    }
+
+    // Проверяем, что услуга принадлежит мастеру
+    if (existingService.masterId !== masterId) {
+      const forbiddenError = new ForbiddenError(
+        'Service does not belong to the current user',
+        'SERVICE_ACCESS_DENIED'
+      );
+      return res.status(forbiddenError.statusCode).json({
+        error: forbiddenError.message,
+        code: forbiddenError.code,
+      });
     }
 
     const validatedData = UpdateServiceSchema.parse(req.body);
@@ -130,15 +146,29 @@ export async function deleteService(req: Request, res: Response) {
       return res.status(400).json({ error: 'Service ID is required' });
     }
 
-    // Проверяем, что услуга принадлежит мастеру
-    const existingService = await prisma.service.findFirst({
-      where: { id, masterId },
+    // Проверяем, существует ли услуга вообще
+    const existingService = await prisma.service.findUnique({
+      where: { id },
     });
 
     if (!existingService) {
-      return res
-        .status(404)
-        .json({ error: 'Service not found or access denied' });
+      const notFoundError = new ServiceNotFoundError(id);
+      return res.status(notFoundError.statusCode).json({
+        error: notFoundError.message,
+        code: notFoundError.code,
+      });
+    }
+
+    // Проверяем, что услуга принадлежит мастеру
+    if (existingService.masterId !== masterId) {
+      const forbiddenError = new ForbiddenError(
+        'Service does not belong to the current user',
+        'SERVICE_ACCESS_DENIED'
+      );
+      return res.status(forbiddenError.statusCode).json({
+        error: forbiddenError.message,
+        code: forbiddenError.code,
+      });
     }
 
     // Проверяем, есть ли активные записи на эту услугу
@@ -166,6 +196,7 @@ export async function deleteService(req: Request, res: Response) {
     return res.status(204).send();
   } catch (error) {
     console.error('Error deleting service:', error);
+
     return res.status(500).json({
       error: 'Failed to delete service',
       message: error instanceof Error ? error.message : 'Unknown error',
@@ -186,20 +217,36 @@ export async function getServiceById(req: Request, res: Response) {
       return res.status(400).json({ error: 'Service ID is required' });
     }
 
-    const service = await prisma.service.findFirst({
-      where: { id, masterId },
+    // Проверяем, существует ли услуга вообще
+    const service = await prisma.service.findUnique({
+      where: { id },
     });
 
     if (!service) {
-      return res
-        .status(404)
-        .json({ error: 'Service not found or access denied' });
+      const notFoundError = new ServiceNotFoundError(id);
+      return res.status(notFoundError.statusCode).json({
+        error: notFoundError.message,
+        code: notFoundError.code,
+      });
+    }
+
+    // Проверяем, что услуга принадлежит мастеру
+    if (service.masterId !== masterId) {
+      const forbiddenError = new ForbiddenError(
+        'Service does not belong to the current user',
+        'SERVICE_ACCESS_DENIED'
+      );
+      return res.status(forbiddenError.statusCode).json({
+        error: forbiddenError.message,
+        code: forbiddenError.code,
+      });
     }
 
     const response = ServiceResponseSchema.parse(service);
     return res.json(response);
   } catch (error) {
     console.error('Error fetching service:', error);
+
     return res.status(500).json({
       error: 'Failed to fetch service',
       message: error instanceof Error ? error.message : 'Unknown error',

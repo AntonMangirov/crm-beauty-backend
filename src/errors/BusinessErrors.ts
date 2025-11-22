@@ -23,7 +23,7 @@ export class ServiceNotFoundError extends AppError {
   constructor(serviceId: string) {
     super(
       `Service with id '${serviceId}' not found`,
-      400,
+      404,
       true,
       'SERVICE_NOT_FOUND'
     );
