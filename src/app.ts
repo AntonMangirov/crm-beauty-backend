@@ -40,6 +40,16 @@ app.use(corsLogger);
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
+// Статические файлы для локальных загрузок
+// Используется если UPLOAD_MODE=local или не указаны переменные Cloudinary
+const uploadMode = process.env.UPLOAD_MODE || 'local';
+const hasCloudinary = !!process.env.CLOUDINARY_CLOUD_NAME;
+
+if (uploadMode === 'local' || !hasCloudinary) {
+  app.use('/uploads', express.static('uploads'));
+  console.log('[UPLOAD] Using local file storage: /uploads');
+}
+
 // 3. Базовые middleware безопасности (БЕЗ Helmet пока, чтобы не блокировать CORS)
 app.use(securityHeaders);
 app.use(requestSizeLimit(10 * 1024 * 1024)); // 10MB лимит

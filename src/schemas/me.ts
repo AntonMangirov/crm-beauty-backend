@@ -1,41 +1,38 @@
 import { z } from 'zod';
 
-// Схема для обновления профиля мастера
+// Схема для обновления профиля мастера (PATCH - только указанные поля)
 export const UpdateProfileSchema = z.object({
   name: z
     .string()
     .min(1, 'Имя обязательно')
     .max(100, 'Имя слишком длинное')
     .optional(),
-  phone: z
-    .union([
-      z
-        .string()
-        .min(3, 'Телефон слишком короткий')
-        .max(32, 'Телефон слишком длинный'),
-      z.null(),
-    ])
-    .optional(),
   description: z
     .union([z.string().max(2000, 'Описание слишком длинное'), z.null()])
-    .optional(),
-  photoUrl: z
-    .union([z.string().url('Некорректный URL фото'), z.null()])
     .optional(),
   address: z
     .union([z.string().max(200, 'Адрес слишком длинный'), z.null()])
     .optional(),
-  vkUrl: z
-    .union([z.string().url('Некорректный URL ВКонтакте'), z.null()])
-    .optional(),
-  telegramUrl: z
-    .union([z.string().url('Некорректный URL Telegram'), z.null()])
-    .optional(),
-  whatsappUrl: z
-    .union([z.string().url('Некорректный URL WhatsApp'), z.null()])
-    .optional(),
-  backgroundImageUrl: z
-    .union([z.string().url('Некорректный URL фонового изображения'), z.null()])
+  photoUrl: z
+    .union([
+      z.string().refine(
+        val => {
+          // Принимаем полные URL (http/https) или относительные пути для локального хранилища
+          if (typeof val !== 'string') return false;
+          // Проверяем локальный путь
+          if (val.startsWith('/uploads/')) return true;
+          // Проверяем, является ли это валидным URL
+          try {
+            new URL(val);
+            return true;
+          } catch {
+            return false;
+          }
+        },
+        { message: 'Некорректный URL фото' }
+      ),
+      z.null(),
+    ])
     .optional(),
 });
 

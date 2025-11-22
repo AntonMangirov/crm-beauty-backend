@@ -4,6 +4,7 @@ import {
   getMe,
   updateProfile,
   getAppointments,
+  uploadPhoto,
 } from '../controllers/meController';
 import {
   getServices,
@@ -12,6 +13,7 @@ import {
   deleteService,
   getServiceById,
 } from '../controllers/servicesController';
+import { upload } from '../middleware/upload';
 
 const router = Router();
 
@@ -21,8 +23,11 @@ router.use(auth);
 // GET /api/me - получить полную информацию о мастере
 router.get('/', getMe);
 
-// PUT /api/me/profile - обновить профиль мастера
-router.put('/profile', updateProfile);
+// PATCH /api/me/profile - обновить профиль мастера (name, description, address, photoUrl)
+router.patch('/profile', updateProfile);
+
+// POST /api/me/profile/upload-photo - загрузить фото профиля
+router.post('/profile/upload-photo', upload.single('photo'), uploadPhoto);
 
 // GET /api/me/appointments - получить записи мастера с фильтрами
 router.get('/appointments', getAppointments);

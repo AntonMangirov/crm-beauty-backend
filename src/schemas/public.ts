@@ -7,18 +7,35 @@ import {
   isWorkingDay,
 } from '../utils/validation';
 
+// Вспомогательная функция для валидации URL (принимает полные URL или локальные пути)
+const urlOrLocalPath = z.string().refine(
+  val => {
+    if (typeof val !== 'string') return false;
+    // Проверяем локальный путь
+    if (val.startsWith('/uploads/')) return true;
+    // Проверяем, является ли это валидным URL
+    try {
+      new URL(val);
+      return true;
+    } catch {
+      return false;
+    }
+  },
+  { message: 'Некорректный URL' }
+);
+
 export const ServiceSchema = z.object({
   id: z.string(),
   name: z.string(),
   price: z.union([z.string(), z.number()]),
   durationMin: z.number().int(),
-  photoUrl: z.string().url().nullable().optional(),
+  photoUrl: urlOrLocalPath.nullable().optional(),
 });
 
 export const PublicProfileResponseSchema = z.object({
   slug: z.string(),
   name: z.string(),
-  photoUrl: z.string().url().nullable().optional(),
+  photoUrl: urlOrLocalPath.nullable().optional(),
   description: z.string().nullable().optional(),
   address: z.string().nullable().optional(),
   phone: z.string().nullable().optional(),
@@ -27,7 +44,7 @@ export const PublicProfileResponseSchema = z.object({
   vkUrl: z.string().url().nullable().optional(),
   telegramUrl: z.string().url().nullable().optional(),
   whatsappUrl: z.string().url().nullable().optional(),
-  backgroundImageUrl: z.string().url().nullable().optional(),
+  backgroundImageUrl: urlOrLocalPath.nullable().optional(),
   rating: z.number().min(0).max(5).nullable().optional(),
   services: z.array(ServiceSchema),
 });

@@ -6,6 +6,11 @@ import {
   AppointmentsFilterSchema,
 } from '../schemas/me';
 import { Prisma } from '@prisma/client';
+import { geocodeAndCache } from '../utils/geocoding';
+import {
+  uploadImageToCloudinary,
+  deleteImageFromCloudinary,
+} from '../utils/cloudinary';
 
 /**
  * GET /me
@@ -117,8 +122,9 @@ export async function getMe(req: Request, res: Response) {
 }
 
 /**
- * PUT /me/profile
- * Обновить профиль мастера
+ * PATCH /me/profile
+ * Обновить профиль мастера (только указанные поля: name, description, address, photoUrl)
+ * При обновлении address автоматически получаются координаты через геокодинг
  */
 export async function updateProfile(req: Request, res: Response) {
   try {
@@ -129,10 +135,52 @@ export async function updateProfile(req: Request, res: Response) {
 
     const validatedData = UpdateProfileSchema.parse(req.body);
 
+    // Подготавливаем данные для обновления
+    const updateData: Prisma.UserUpdateInput = {};
+
+    if (validatedData.name !== undefined) {
+      updateData.name = validatedData.name;
+    }
+
+    if (validatedData.description !== undefined) {
+      updateData.description = validatedData.description;
+    }
+
+    if (validatedData.photoUrl !== undefined) {
+      updateData.photoUrl = validatedData.photoUrl;
+    }
+
+    // Если обновляется адрес, получаем координаты
+    if (validatedData.address !== undefined) {
+      updateData.address = validatedData.address;
+
+      // Если адрес не null, делаем геокодинг
+      if (validatedData.address) {
+        const coordinates = await geocodeAndCache(
+          prisma,
+          userId,
+          validatedData.address
+        );
+
+        if (coordinates) {
+          updateData.lat = coordinates.lat;
+          updateData.lng = coordinates.lng;
+        } else {
+          // Если геокодинг не удался, очищаем координаты
+          updateData.lat = null;
+          updateData.lng = null;
+        }
+      } else {
+        // Если адрес удален, очищаем координаты
+        updateData.lat = null;
+        updateData.lng = null;
+      }
+    }
+
     // Обновляем профиль
     const updatedUser = await prisma.user.update({
       where: { id: userId },
-      data: validatedData,
+      data: updateData,
       select: {
         id: true,
         email: true,
@@ -293,6 +341,120 @@ export async function getAppointments(req: Request, res: Response) {
 
     return res.status(500).json({
       error: 'Failed to fetch appointments',
+      message: error instanceof Error ? error.message : 'Unknown error',
+    });
+  }
+}
+
+/**
+ * POST /me/profile/upload-photo
+ * Загрузить фото профиля в Cloudinary
+ */
+export async function uploadPhoto(req: Request, res: Response) {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    if (!req.file) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+
+    // Получаем текущего пользователя для удаления старого фото
+    const currentUser = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { photoUrl: true },
+    });
+
+    // Загружаем новое фото в Cloudinary
+    const imageUrl = await uploadImageToCloudinary(
+      req.file.buffer,
+      'beauty-crm/profiles'
+    );
+
+    // Удаляем старое фото (если есть)
+    if (currentUser?.photoUrl) {
+      try {
+        await deleteImageFromCloudinary(currentUser.photoUrl);
+      } catch (error) {
+        console.error('Error deleting old photo:', error);
+        // Продолжаем даже если удаление не удалось
+      }
+    }
+
+    // Обновляем photoUrl в БД
+    const updatedUser = await prisma.user.update({
+      where: { id: userId },
+      data: { photoUrl: imageUrl },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        slug: true,
+        phone: true,
+        description: true,
+        photoUrl: true,
+        address: true,
+        lat: true,
+        lng: true,
+        vkUrl: true,
+        telegramUrl: true,
+        whatsappUrl: true,
+        backgroundImageUrl: true,
+        rating: true,
+        isActive: true,
+        role: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
+
+    // Получаем статистику для ответа
+    const [
+      totalServices,
+      activeServices,
+      totalAppointments,
+      upcomingAppointments,
+      completedAppointments,
+      totalClients,
+    ] = await Promise.all([
+      prisma.service.count({ where: { masterId: userId } }),
+      prisma.service.count({ where: { masterId: userId, isActive: true } }),
+      prisma.appointment.count({ where: { masterId: userId } }),
+      prisma.appointment.count({
+        where: {
+          masterId: userId,
+          status: { in: ['PENDING', 'CONFIRMED'] },
+          startAt: { gte: new Date() },
+        },
+      }),
+      prisma.appointment.count({
+        where: { masterId: userId, status: 'COMPLETED' },
+      }),
+      prisma.client.count({ where: { masterId: userId } }),
+    ]);
+
+    const response = MeResponseSchema.parse({
+      ...updatedUser,
+      lat: updatedUser.lat ? Number(updatedUser.lat) : null,
+      lng: updatedUser.lng ? Number(updatedUser.lng) : null,
+      rating: updatedUser.rating ? Number(updatedUser.rating) : null,
+      stats: {
+        totalServices,
+        activeServices,
+        totalAppointments,
+        upcomingAppointments,
+        completedAppointments,
+        totalClients,
+      },
+    });
+
+    return res.json(response);
+  } catch (error) {
+    console.error('Error uploading photo:', error);
+    return res.status(500).json({
+      error: 'Failed to upload photo',
       message: error instanceof Error ? error.message : 'Unknown error',
     });
   }
