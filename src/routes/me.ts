@@ -6,6 +6,7 @@ import {
   getAppointments,
   uploadPhoto,
   updateAppointmentStatus,
+  getClients,
 } from '../controllers/meController';
 import {
   getServices,
@@ -35,6 +36,9 @@ router.get('/appointments', getAppointments);
 
 // PUT /api/me/appointments/:id - обновить статус записи
 router.put('/appointments/:id', updateAppointmentStatus);
+
+// GET /api/me/clients - получить список клиентов мастера
+router.get('/clients', getClients);
 
 // GET /api/me/services - получить все услуги мастера
 router.get('/services', getServices);

@@ -120,3 +120,14 @@ export const MeResponseSchema = z.object({
 });
 
 export type MeResponse = z.infer<typeof MeResponseSchema>;
+
+// Схема для ответа списка клиентов
+export const ClientListItemSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  phone: z.string().nullable(),
+  lastVisit: z.date().nullable(), // Дата последнего завершенного посещения
+  visitsCount: z.number(), // Количество завершенных посещений
+});
+
+export type ClientListItem = z.infer<typeof ClientListItemSchema>;

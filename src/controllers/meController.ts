@@ -5,6 +5,7 @@ import {
   MeResponseSchema,
   AppointmentsFilterSchema,
   UpdateAppointmentStatusSchema,
+  ClientListItemSchema,
 } from '../schemas/me';
 import { Prisma } from '@prisma/client';
 import { geocodeAndCache } from '../utils/geocoding';
@@ -565,6 +566,83 @@ export async function updateAppointmentStatus(req: Request, res: Response) {
 
     return res.status(500).json({
       error: 'Failed to update appointment status',
+      message: error instanceof Error ? error.message : 'Unknown error',
+    });
+  }
+}
+
+/**
+ * GET /me/clients
+ * Получить список клиентов мастера с информацией о посещениях
+ */
+export async function getClients(req: Request, res: Response) {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    // Получаем всех клиентов мастера с их завершенными посещениями
+    const clients = await prisma.client.findMany({
+      where: {
+        masterId: userId,
+        isActive: true, // Только активные клиенты
+      },
+      select: {
+        id: true,
+        name: true,
+        phone: true,
+        appointments: {
+          where: {
+            masterId: userId,
+            status: 'COMPLETED',
+          },
+          select: {
+            startAt: true,
+          },
+          orderBy: {
+            startAt: 'desc',
+          },
+        },
+      },
+      orderBy: {
+        name: 'asc', // Сортировка по имени
+      },
+    });
+
+    // Формируем ответ с вычисленными полями
+    const clientsWithStats = clients.map(client => {
+      const lastVisit =
+        client.appointments.length > 0 ? client.appointments[0].startAt : null;
+      const visitsCount = client.appointments.length;
+
+      return {
+        id: client.id,
+        name: client.name,
+        phone: client.phone,
+        lastVisit,
+        visitsCount,
+      };
+    });
+
+    // Валидируем и возвращаем ответ
+    const response = clientsWithStats.map(client =>
+      ClientListItemSchema.parse(client)
+    );
+
+    return res.json(response);
+  } catch (error) {
+    console.error('Error fetching clients:', error);
+
+    if (error instanceof Error && error.name === 'ZodError') {
+      return res.status(400).json({
+        error: 'Validation error',
+        details: error.message,
+      });
+    }
+
+    return res.status(500).json({
+      error: 'Failed to fetch clients',
       message: error instanceof Error ? error.message : 'Unknown error',
     });
   }
