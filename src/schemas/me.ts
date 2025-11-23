@@ -131,3 +131,28 @@ export const ClientListItemSchema = z.object({
 });
 
 export type ClientListItem = z.infer<typeof ClientListItemSchema>;
+
+// Схема для ответа истории клиента
+export const ClientHistoryItemSchema = z.object({
+  id: z.string(),
+  date: z.date(), // Дата записи (startAt)
+  service: z.object({
+    id: z.string(),
+    name: z.string(),
+    price: z.number(),
+  }),
+  status: z.enum(['PENDING', 'CONFIRMED', 'COMPLETED', 'CANCELED', 'NO_SHOW']),
+  photos: z.array(
+    z.object({
+      id: z.string(),
+      url: z.string(),
+      description: z.string().nullable(),
+      createdAt: z.date(),
+    })
+  ),
+});
+
+export const ClientHistoryResponseSchema = z.array(ClientHistoryItemSchema);
+
+export type ClientHistoryItem = z.infer<typeof ClientHistoryItemSchema>;
+export type ClientHistoryResponse = z.infer<typeof ClientHistoryResponseSchema>;

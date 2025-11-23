@@ -6,6 +6,7 @@ import {
   AppointmentsFilterSchema,
   UpdateAppointmentStatusSchema,
   ClientListItemSchema,
+  ClientHistoryResponseSchema,
 } from '../schemas/me';
 import { Prisma } from '@prisma/client';
 import { geocodeAndCache } from '../utils/geocoding';
@@ -643,6 +644,124 @@ export async function getClients(req: Request, res: Response) {
 
     return res.status(500).json({
       error: 'Failed to fetch clients',
+      message: error instanceof Error ? error.message : 'Unknown error',
+    });
+  }
+}
+
+/**
+ * GET /me/clients/:id/history
+ * Получить историю посещений клиента
+ */
+export async function getClientHistory(req: Request, res: Response) {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const { id: clientId } = req.params;
+    if (!clientId) {
+      return res.status(400).json({ error: 'Client ID is required' });
+    }
+
+    // Проверяем, что клиент принадлежит мастеру
+    const client = await prisma.client.findFirst({
+      where: {
+        id: clientId,
+        masterId: userId,
+      },
+    });
+
+    if (!client) {
+      return res.status(404).json({ error: 'Client not found' });
+    }
+
+    // Получаем все записи клиента с информацией об услуге
+    const appointments = await prisma.appointment.findMany({
+      where: {
+        clientId,
+        masterId: userId,
+      },
+      include: {
+        service: {
+          select: {
+            id: true,
+            name: true,
+            price: true,
+          },
+        },
+      },
+      orderBy: {
+        startAt: 'desc', // Сначала новые записи
+      },
+    });
+
+    // Получаем все фото клиента
+    const allPhotos = await prisma.photo.findMany({
+      where: {
+        clientId,
+      },
+      orderBy: {
+        createdAt: 'asc',
+      },
+    });
+
+    // Формируем ответ: для каждой записи находим связанные фото
+    // Фото считается связанным с записью, если оно создано в день записи или после неё,
+    // но до следующей записи (или до текущего момента, если это последняя запись)
+    const historyItems = appointments.map((appointment, index) => {
+      const appointmentDate = new Date(appointment.startAt);
+      appointmentDate.setHours(0, 0, 0, 0); // Начало дня записи
+
+      // Определяем период для фото: от даты записи до следующей записи
+      const nextAppointment = appointments[index + 1];
+      const periodEnd = nextAppointment
+        ? new Date(nextAppointment.startAt)
+        : new Date(); // Если это последняя запись, используем текущую дату
+
+      // Фильтруем фото, которые попадают в период записи
+      const relatedPhotos = allPhotos
+        .filter(photo => {
+          const photoDate = new Date(photo.createdAt);
+          return photoDate >= appointmentDate && photoDate <= periodEnd;
+        })
+        .map(photo => ({
+          id: photo.id,
+          url: photo.url,
+          description: photo.description,
+          createdAt: photo.createdAt,
+        }));
+
+      return {
+        id: appointment.id,
+        date: appointment.startAt,
+        service: {
+          id: appointment.service.id,
+          name: appointment.service.name,
+          price: Number(appointment.service.price),
+        },
+        status: appointment.status,
+        photos: relatedPhotos,
+      };
+    });
+
+    // Валидируем и возвращаем ответ
+    const response = ClientHistoryResponseSchema.parse(historyItems);
+
+    return res.json(response);
+  } catch (error) {
+    console.error('Error fetching client history:', error);
+
+    if (error instanceof Error && error.name === 'ZodError') {
+      return res.status(400).json({
+        error: 'Validation error',
+        details: error.message,
+      });
+    }
+
+    return res.status(500).json({
+      error: 'Failed to fetch client history',
       message: error instanceof Error ? error.message : 'Unknown error',
     });
   }

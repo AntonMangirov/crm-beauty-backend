@@ -7,6 +7,7 @@ import {
   uploadPhoto,
   updateAppointmentStatus,
   getClients,
+  getClientHistory,
 } from '../controllers/meController';
 import {
   getServices,
@@ -39,6 +40,9 @@ router.put('/appointments/:id', updateAppointmentStatus);
 
 // GET /api/me/clients - получить список клиентов мастера
 router.get('/clients', getClients);
+
+// GET /api/me/clients/:id/history - получить историю посещений клиента
+router.get('/clients/:id/history', getClientHistory);
 
 // GET /api/me/services - получить все услуги мастера
 router.get('/services', getServices);
