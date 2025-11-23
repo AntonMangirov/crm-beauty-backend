@@ -155,6 +155,18 @@ GET /api/me/appointments?dateFrom=2024-01-01T00:00:00Z&dateTo=2024-01-31T23:59:5
 ### DELETE /api/me/services/:id
 Удалить услугу (только если нет активных записей).
 
+### PUT /api/me/appointments/:id
+Обновить статус записи.
+
+**Тело запроса:**
+```json
+{
+  "status": "CONFIRMED" | "CANCELED" | "COMPLETED"
+}
+```
+
+**Ответ:** Обновленный объект записи с клиентом и услугой
+
 ## Статистика в GET /api/me
 
 - `totalServices` - общее количество услуг мастера

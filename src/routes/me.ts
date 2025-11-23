@@ -5,6 +5,7 @@ import {
   updateProfile,
   getAppointments,
   uploadPhoto,
+  updateAppointmentStatus,
 } from '../controllers/meController';
 import {
   getServices,
@@ -31,6 +32,9 @@ router.post('/profile/upload-photo', upload.single('photo'), uploadPhoto);
 
 // GET /api/me/appointments - получить записи мастера с фильтрами
 router.get('/appointments', getAppointments);
+
+// PUT /api/me/appointments/:id - обновить статус записи
+router.put('/appointments/:id', updateAppointmentStatus);
 
 // GET /api/me/services - получить все услуги мастера
 router.get('/services', getServices);

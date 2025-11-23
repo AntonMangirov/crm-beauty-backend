@@ -4,6 +4,7 @@ import {
   UpdateProfileSchema,
   MeResponseSchema,
   AppointmentsFilterSchema,
+  UpdateAppointmentStatusSchema,
 } from '../schemas/me';
 import { Prisma } from '@prisma/client';
 import { geocodeAndCache } from '../utils/geocoding';
@@ -11,6 +12,8 @@ import {
   uploadImageToCloudinary,
   deleteImageFromCloudinary,
 } from '../utils/cloudinary';
+import { AppointmentNotFoundError } from '../errors/BusinessErrors';
+import { ForbiddenError } from '../errors/AppError';
 
 /**
  * GET /me
@@ -459,6 +462,109 @@ export async function uploadPhoto(req: Request, res: Response) {
     console.error('Error uploading photo:', error);
     return res.status(500).json({
       error: 'Failed to upload photo',
+      message: error instanceof Error ? error.message : 'Unknown error',
+    });
+  }
+}
+
+/**
+ * PUT /me/appointments/:id
+ * Обновить статус записи
+ */
+export async function updateAppointmentStatus(req: Request, res: Response) {
+  try {
+    const masterId = req.user?.id;
+    if (!masterId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const { id } = req.params;
+    if (!id) {
+      return res.status(400).json({ error: 'Appointment ID is required' });
+    }
+
+    // Валидация данных
+    const validatedData = UpdateAppointmentStatusSchema.parse(req.body);
+
+    // Проверяем, существует ли запись вообще
+    const appointment = await prisma.appointment.findUnique({
+      where: { id },
+    });
+
+    if (!appointment) {
+      const notFoundError = new AppointmentNotFoundError(id);
+      return res.status(notFoundError.statusCode).json({
+        error: notFoundError.message,
+        code: notFoundError.code,
+      });
+    }
+
+    // Проверяем, что запись принадлежит мастеру
+    if (appointment.masterId !== masterId) {
+      const forbiddenError = new ForbiddenError(
+        'Appointment does not belong to the current user',
+        'APPOINTMENT_ACCESS_DENIED'
+      );
+      return res.status(forbiddenError.statusCode).json({
+        error: forbiddenError.message,
+        code: forbiddenError.code,
+      });
+    }
+
+    // Обновляем статус записи
+    const updatedAppointment = await prisma.appointment.update({
+      where: { id },
+      data: { status: validatedData.status },
+      include: {
+        client: {
+          select: {
+            id: true,
+            name: true,
+            phone: true,
+            email: true,
+          },
+        },
+        service: {
+          select: {
+            id: true,
+            name: true,
+            price: true,
+            durationMin: true,
+          },
+        },
+      },
+    });
+
+    // Преобразуем Decimal в number для цены
+    const response = {
+      ...updatedAppointment,
+      price: updatedAppointment.price ? Number(updatedAppointment.price) : null,
+    };
+
+    return res.json(response);
+  } catch (error) {
+    console.error('Error updating appointment status:', error);
+
+    if (
+      error instanceof AppointmentNotFoundError ||
+      error instanceof ForbiddenError
+    ) {
+      const appError = error as AppointmentNotFoundError | ForbiddenError;
+      return res.status(appError.statusCode).json({
+        error: appError.message,
+        code: appError.code,
+      });
+    }
+
+    if (error instanceof Error && error.name === 'ZodError') {
+      return res.status(400).json({
+        error: 'Validation error',
+        details: error.message,
+      });
+    }
+
+    return res.status(500).json({
+      error: 'Failed to update appointment status',
       message: error instanceof Error ? error.message : 'Unknown error',
     });
   }
