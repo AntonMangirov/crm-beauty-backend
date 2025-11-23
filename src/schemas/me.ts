@@ -80,11 +80,7 @@ export type AppointmentsFilterRequest = z.infer<
 
 // Схема для обновления статуса записи
 export const UpdateAppointmentStatusSchema = z.object({
-  status: z.enum(['CONFIRMED', 'CANCELED', 'COMPLETED'], {
-    errorMap: () => ({
-      message: 'Status must be one of: CONFIRMED, CANCELED, COMPLETED',
-    }),
-  }),
+  status: z.enum(['CONFIRMED', 'CANCELED', 'COMPLETED']),
 });
 
 export type UpdateAppointmentStatusRequest = z.infer<
