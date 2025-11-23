@@ -22,7 +22,13 @@ export async function getServices(req: Request, res: Response) {
       orderBy: { createdAt: 'desc' },
     });
 
-    const response = ServicesListResponseSchema.parse(services);
+    // Преобразуем Decimal в number для Zod валидации
+    const servicesWithNumbers = services.map(service => ({
+      ...service,
+      price: Number(service.price),
+    }));
+
+    const response = ServicesListResponseSchema.parse(servicesWithNumbers);
     return res.json(response);
   } catch (error) {
     console.error('Error fetching services:', error);
@@ -50,7 +56,13 @@ export async function createService(req: Request, res: Response) {
       },
     });
 
-    const response = ServiceResponseSchema.parse(service);
+    // Преобразуем Decimal в number для Zod валидации
+    const serviceWithNumber = {
+      ...service,
+      price: Number(service.price),
+    };
+
+    const response = ServiceResponseSchema.parse(serviceWithNumber);
     return res.status(201).json(response);
   } catch (error) {
     console.error('Error creating service:', error);
@@ -114,7 +126,13 @@ export async function updateService(req: Request, res: Response) {
       data: validatedData,
     });
 
-    const response = ServiceResponseSchema.parse(service);
+    // Преобразуем Decimal в number для Zod валидации
+    const serviceWithNumber = {
+      ...service,
+      price: Number(service.price),
+    };
+
+    const response = ServiceResponseSchema.parse(serviceWithNumber);
     return res.json(response);
   } catch (error) {
     console.error('Error updating service:', error);
@@ -242,7 +260,13 @@ export async function getServiceById(req: Request, res: Response) {
       });
     }
 
-    const response = ServiceResponseSchema.parse(service);
+    // Преобразуем Decimal в number для Zod валидации
+    const serviceWithNumber = {
+      ...service,
+      price: Number(service.price),
+    };
+
+    const response = ServiceResponseSchema.parse(serviceWithNumber);
     return res.json(response);
   } catch (error) {
     console.error('Error fetching service:', error);
