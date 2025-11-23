@@ -69,15 +69,19 @@ Authorization: Bearer <token>
 Получить записи мастера с фильтрами.
 
 **Query параметры:**
-- `dateFrom` (string, optional) - начальная дата (ISO 8601)
-- `dateTo` (string, optional) - конечная дата (ISO 8601)
+- `from` (string, optional) - начальная дата (ISO 8601) - предпочтительный параметр
+- `to` (string, optional) - конечная дата (ISO 8601) - предпочтительный параметр
+- `dateFrom` (string, optional) - начальная дата (ISO 8601) - для обратной совместимости
+- `dateTo` (string, optional) - конечная дата (ISO 8601) - для обратной совместимости
 - `status` (enum, optional) - статус записи: PENDING, CONFIRMED, COMPLETED, CANCELED, NO_SHOW
 - `serviceId` (string, optional) - ID услуги
 - `clientId` (string, optional) - ID клиента
 
-**Пример:**
+**Примеры:**
 ```
-GET /api/me/appointments?status=CONFIRMED&dateFrom=2024-01-01T00:00:00Z
+GET /api/me/appointments?from=2024-01-01T00:00:00Z&to=2024-01-31T23:59:59Z
+GET /api/me/appointments?status=CONFIRMED&from=2024-01-01T00:00:00Z
+GET /api/me/appointments?dateFrom=2024-01-01T00:00:00Z&dateTo=2024-01-31T23:59:59Z
 ```
 
 **Ответ:**

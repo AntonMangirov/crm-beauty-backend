@@ -39,7 +39,22 @@ export const UpdateProfileSchema = z.object({
 export type UpdateProfileRequest = z.infer<typeof UpdateProfileSchema>;
 
 // Схема для фильтров записей
+// Поддерживаем оба варианта: from/to (короткие) и dateFrom/dateTo (для обратной совместимости)
 export const AppointmentsFilterSchema = z.object({
+  // Короткие параметры (предпочтительные)
+  from: z
+    .string()
+    .optional()
+    .refine(val => !val || !isNaN(Date.parse(val)), {
+      message: 'Invalid from format',
+    }),
+  to: z
+    .string()
+    .optional()
+    .refine(val => !val || !isNaN(Date.parse(val)), {
+      message: 'Invalid to format',
+    }),
+  // Старые параметры (для обратной совместимости)
   dateFrom: z
     .string()
     .optional()

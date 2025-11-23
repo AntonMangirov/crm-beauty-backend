@@ -279,13 +279,17 @@ export async function getAppointments(req: Request, res: Response) {
     const where: Prisma.AppointmentWhereInput = { masterId: userId };
 
     // Фильтр по дате начала
-    if (filters.dateFrom || filters.dateTo) {
+    // Поддерживаем оба варианта: from/to и dateFrom/dateTo
+    const dateFrom = filters.from || filters.dateFrom;
+    const dateTo = filters.to || filters.dateTo;
+
+    if (dateFrom || dateTo) {
       where.startAt = {};
-      if (filters.dateFrom) {
-        where.startAt.gte = new Date(filters.dateFrom);
+      if (dateFrom) {
+        where.startAt.gte = new Date(dateFrom);
       }
-      if (filters.dateTo) {
-        where.startAt.lte = new Date(filters.dateTo);
+      if (dateTo) {
+        where.startAt.lte = new Date(dateTo);
       }
     }
 
