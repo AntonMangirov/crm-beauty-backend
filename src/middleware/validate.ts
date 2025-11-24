@@ -1,5 +1,6 @@
 import { ZodError, ZodObject, ZodTypeAny } from 'zod';
 import { Request, Response, NextFunction } from 'express';
+import { logError } from '../utils/logger';
 
 type Schemas = {
   body?: ZodObject<any> | ZodTypeAny;
@@ -10,16 +11,6 @@ type Schemas = {
 export function validate(schemas: Schemas) {
   return (req: Request, res: Response, next: NextFunction) => {
     try {
-      // Логируем входящий запрос для отладки
-      if (process.env.NODE_ENV === 'development') {
-        console.log('[VALIDATE] Incoming request:', {
-          path: req.path,
-          method: req.method,
-          params: req.params,
-          query: req.query,
-        });
-      }
-
       if (schemas.body) {
         const sanitizedBody = { ...req.body };
         if (sanitizedBody.startAt instanceof Date) {
@@ -33,17 +24,13 @@ export function validate(schemas: Schemas) {
         }
         if (schemas.query) {
           try {
-            // Валидируем query, но не перезаписываем req.query (он только для чтения)
-            // Вместо этого сохраняем валидированные данные в req.validatedQuery
             const validatedQuery = schemas.query.parse(req.query);
             (req as any).validatedQuery = validatedQuery;
-            // Также обновляем req.query через Object.assign для совместимости
             Object.assign(req.query, validatedQuery);
           } catch (err) {
             if (err instanceof ZodError) {
-              console.error('[VALIDATE] Query validation error:', {
+              logError('Ошибка валидации query параметров', err, {
                 query: req.query,
-                issues: err.issues,
                 path: req.path,
               });
             }
@@ -55,16 +42,13 @@ export function validate(schemas: Schemas) {
       return next();
     } catch (err) {
       if (err instanceof ZodError) {
-        console.error('[VALIDATE] Validation error:', {
+        logError('Ошибка валидации', err, {
           path: req.path,
           method: req.method,
-          issues: err.issues,
           params: req.params,
           query: req.query,
-          body: req.body,
         });
 
-        // Формируем понятные сообщения об ошибках на русском
         const issues = err.issues;
         let errorMessage = 'Ошибка валидации данных';
 
@@ -85,7 +69,7 @@ export function validate(schemas: Schemas) {
         };
         return res.status(400).json(errorResponse);
       }
-      console.error('[VALIDATE] Unknown validation error:', err);
+      logError('Неизвестная ошибка валидации', err);
       return res.status(400).json({
         error: 'Validation failed',
         message: 'Ошибка валидации запроса',

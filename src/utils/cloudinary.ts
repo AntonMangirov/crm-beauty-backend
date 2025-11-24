@@ -2,17 +2,17 @@ import { v2 as cloudinary } from 'cloudinary';
 import { Readable } from 'stream';
 import fs from 'fs/promises';
 import path from 'path';
+import { logError } from './logger';
 
-// Режим работы: 'cloudinary' или 'local'
 const UPLOAD_MODE = process.env.UPLOAD_MODE || 'local';
 const UPLOADS_DIR = path.join(process.cwd(), 'uploads');
 
-// Создаем директорию для загрузок, если её нет
 if (UPLOAD_MODE === 'local') {
-  fs.mkdir(UPLOADS_DIR, { recursive: true }).catch(console.error);
+  fs.mkdir(UPLOADS_DIR, { recursive: true }).catch(error => {
+    logError('Ошибка создания директории uploads', error);
+  });
 }
 
-// Конфигурация Cloudinary (только если используется Cloudinary)
 if (UPLOAD_MODE === 'cloudinary') {
   cloudinary.config({
     cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
@@ -22,28 +22,21 @@ if (UPLOAD_MODE === 'cloudinary') {
 }
 
 /**
- * Загружает изображение (в Cloudinary или локально)
- * @param buffer - буфер изображения
- * @param folder - папка (опционально)
- * @returns URL загруженного изображения
+ * Загружает изображение в Cloudinary или локально
  */
 export async function uploadImageToCloudinary(
   buffer: Buffer,
   folder: string = 'beauty-crm'
 ): Promise<string> {
   if (UPLOAD_MODE === 'local') {
-    // Локальное хранилище
     const timestamp = Date.now();
     const randomStr = Math.random().toString(36).substring(2, 9);
     const filename = `${timestamp}-${randomStr}.jpg`;
     const filepath = path.join(UPLOADS_DIR, filename);
 
     await fs.writeFile(filepath, buffer);
-    const url = `/uploads/${filename}`;
-    console.log('[LOCAL UPLOAD] File saved:', url);
-    return url;
+    return `/uploads/${filename}`;
   } else {
-    // Cloudinary
     return new Promise((resolve, reject) => {
       const uploadStream = cloudinary.uploader.upload_stream(
         {
@@ -60,10 +53,9 @@ export async function uploadImageToCloudinary(
           result: { secure_url: string } | undefined
         ) => {
           if (error) {
-            console.error('[CLOUDINARY] Upload error:', error);
+            logError('Ошибка загрузки в Cloudinary', error);
             reject(error);
           } else if (result) {
-            console.log('[CLOUDINARY] Upload successful:', result.secure_url);
             resolve(result.secure_url);
           } else {
             reject(new Error('Upload failed: no result'));
@@ -78,26 +70,19 @@ export async function uploadImageToCloudinary(
 }
 
 /**
- * Удаляет изображение (из Cloudinary или локально)
- * @param
- *   imageUrl - URL изображения
+ * Удаляет изображение из Cloudinary или локально
  */
 export async function deleteImageFromCloudinary(
   imageUrl: string
 ): Promise<void> {
   try {
     if (UPLOAD_MODE === 'local') {
-      // Локальное удаление
       if (imageUrl.startsWith('/uploads/')) {
         const filename = path.basename(imageUrl);
         const filepath = path.join(UPLOADS_DIR, filename);
-        await fs.unlink(filepath).catch(() => {
-          // Игнорируем ошибку если файл не найден
-        });
-        console.log('[LOCAL DELETE] File deleted:', filename);
+        await fs.unlink(filepath).catch(() => {});
       }
     } else {
-      // Cloudinary удаление
       const urlParts = imageUrl.split('/');
       const filename = urlParts[urlParts.length - 1];
       const publicId = filename.split('.')[0];
@@ -105,10 +90,8 @@ export async function deleteImageFromCloudinary(
 
       const fullPublicId = folder ? `${folder}/${publicId}` : publicId;
       await cloudinary.uploader.destroy(fullPublicId);
-      console.log('[CLOUDINARY] Deleted:', fullPublicId);
     }
   } catch (error) {
-    console.error('[DELETE] Error:', error);
-    // Не бросаем ошибку, чтобы не блокировать удаление записи
+    logError('Ошибка удаления изображения', error);
   }
 }

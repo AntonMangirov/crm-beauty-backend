@@ -9,8 +9,8 @@ import {
   LoginResponseSchema,
 } from '../schemas/auth';
 import { hashPassword, verifyPassword } from '../utils/password';
+import { logError } from '../utils/logger';
 
-// Расширяем тип Request для добавления user
 declare global {
   namespace Express {
     interface Request {
@@ -30,18 +30,16 @@ export async function register(req: Request, res: Response) {
         .json({ error: 'email, password and name are required' });
     }
 
-    // проверяем, не занят ли email
     const existing = await prisma.user.findUnique({ where: { email } });
     if (existing) return res.status(400).json({ error: 'User already exists' });
 
     const passwordHash = await hashPassword(password);
 
-    // Генерируем slug вида: name-lowercase-123 (всегда с 3-значным суффиксом)
     const baseSlug = slugifyName(name);
     let slug = '';
     let attempts = 0;
     while (attempts < 20) {
-      const suffix = String(Math.floor(100 + Math.random() * 900)); // 100-999
+      const suffix = String(Math.floor(100 + Math.random() * 900));
       const candidate = `${baseSlug}-${suffix}`;
       const exists = await prisma.user.findUnique({
         where: { slug: candidate },
@@ -52,7 +50,7 @@ export async function register(req: Request, res: Response) {
       }
       attempts += 1;
     }
-    // Фоллбек на случай экстремальных коллизий
+
     if (!slug) {
       slug = `${baseSlug}-${Date.now().toString().slice(-3)}`;
     }
@@ -67,7 +65,6 @@ export async function register(req: Request, res: Response) {
       },
     });
 
-    // НИКОГДА не возвращаем passwordHash
     const response = RegisterResponseSchema.parse({
       id: user.id,
       email: user.email,
@@ -77,7 +74,7 @@ export async function register(req: Request, res: Response) {
     });
     return res.status(201).json(response);
   } catch (err) {
-    console.error(err);
+    logError('Ошибка регистрации', err);
     return res.status(500).json({ error: 'Server error' });
   }
 }
@@ -103,7 +100,7 @@ export async function login(req: Request, res: Response) {
     const response = LoginResponseSchema.parse({ token });
     return res.json(response);
   } catch (err) {
-    console.error(err);
+    logError('Ошибка входа', err);
     return res.status(500).json({ error: 'Server error' });
   }
 }
@@ -129,7 +126,7 @@ export async function me(req: Request, res: Response) {
     if (!user) return res.status(404).json({ error: 'User not found' });
     return res.json(user);
   } catch (err) {
-    console.error(err);
+    logError('Ошибка получения профиля', err);
     return res.status(500).json({ error: 'Server error' });
   }
 }

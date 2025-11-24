@@ -18,7 +18,6 @@ export const auth = (req: Request, res: Response, next: NextFunction) => {
       token,
       process.env.JWT_SECRET as string
     ) as JwtPayload;
-    // записываем user id в request (тип расширим ниже)
     req.user = { id: payload.userId };
     next();
   } catch {

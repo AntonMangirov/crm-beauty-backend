@@ -9,6 +9,7 @@ import {
   getClients,
   getClientHistory,
   uploadAppointmentPhotos,
+  deleteAppointmentPhoto,
 } from '../controllers/meController';
 import {
   getServices,
@@ -45,6 +46,9 @@ router.post(
   upload.array('photos', 10), // Максимум 10 фото за раз
   uploadAppointmentPhotos
 );
+
+// DELETE /api/me/appointments/:id/photos/:photoId - удалить фото из записи
+router.delete('/appointments/:id/photos/:photoId', deleteAppointmentPhoto);
 
 // GET /api/me/clients - получить список клиентов мастера
 router.get('/clients', getClients);

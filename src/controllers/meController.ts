@@ -17,9 +17,9 @@ import {
 } from '../utils/cloudinary';
 import { AppointmentNotFoundError } from '../errors/BusinessErrors';
 import { ForbiddenError } from '../errors/AppError';
+import { logError } from '../utils/logger';
 
 /**
- * GET /me
  * Получить полную информацию о текущем мастере со статистикой
  */
 export async function getMe(req: Request, res: Response) {
@@ -29,7 +29,6 @@ export async function getMe(req: Request, res: Response) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
 
-    // Получаем полную информацию о мастере
     const user = await prisma.user.findUnique({
       where: { id: userId },
       select: {
@@ -59,7 +58,6 @@ export async function getMe(req: Request, res: Response) {
       return res.status(404).json({ error: 'User not found' });
     }
 
-    // Получаем статистику
     const [
       totalServices,
       activeServices,
@@ -68,19 +66,15 @@ export async function getMe(req: Request, res: Response) {
       completedAppointments,
       totalClients,
     ] = await Promise.all([
-      // Общее количество услуг
       prisma.service.count({
         where: { masterId: userId },
       }),
-      // Активные услуги
       prisma.service.count({
         where: { masterId: userId, isActive: true },
       }),
-      // Общее количество записей
       prisma.appointment.count({
         where: { masterId: userId },
       }),
-      // Предстоящие записи (PENDING или CONFIRMED, startAt в будущем)
       prisma.appointment.count({
         where: {
           masterId: userId,
@@ -88,20 +82,16 @@ export async function getMe(req: Request, res: Response) {
           startAt: { gte: new Date() },
         },
       }),
-      // Завершенные записи
       prisma.appointment.count({
         where: {
           masterId: userId,
           status: 'COMPLETED',
         },
       }),
-      // Общее количество клиентов
       prisma.client.count({
         where: { masterId: userId },
       }),
     ]);
-
-    // Формируем ответ
     const response = MeResponseSchema.parse({
       ...user,
       lat: user.lat ? Number(user.lat) : null,
@@ -119,7 +109,7 @@ export async function getMe(req: Request, res: Response) {
 
     return res.json(response);
   } catch (error) {
-    console.error('Error fetching me:', error);
+    logError('Ошибка получения профиля', error);
     return res.status(500).json({
       error: 'Failed to fetch profile',
       message: error instanceof Error ? error.message : 'Unknown error',
@@ -128,8 +118,7 @@ export async function getMe(req: Request, res: Response) {
 }
 
 /**
- * PATCH /me/profile
- * Обновить профиль мастера (только указанные поля: name, description, address, photoUrl)
+ * Обновить профиль мастера
  * При обновлении address автоматически получаются координаты через геокодинг
  */
 export async function updateProfile(req: Request, res: Response) {
@@ -140,8 +129,6 @@ export async function updateProfile(req: Request, res: Response) {
     }
 
     const validatedData = UpdateProfileSchema.parse(req.body);
-
-    // Подготавливаем данные для обновления
     const updateData: Prisma.UserUpdateInput = {};
 
     if (validatedData.name !== undefined) {
@@ -156,11 +143,10 @@ export async function updateProfile(req: Request, res: Response) {
       updateData.photoUrl = validatedData.photoUrl;
     }
 
-    // Если обновляется адрес, получаем координаты
+    // При обновлении адреса автоматически получаем координаты через геокодинг
     if (validatedData.address !== undefined) {
       updateData.address = validatedData.address;
 
-      // Если адрес не null, делаем геокодинг
       if (validatedData.address) {
         const coordinates = await geocodeAndCache(
           prisma,
@@ -172,18 +158,14 @@ export async function updateProfile(req: Request, res: Response) {
           updateData.lat = coordinates.lat;
           updateData.lng = coordinates.lng;
         } else {
-          // Если геокодинг не удался, очищаем координаты
           updateData.lat = null;
           updateData.lng = null;
         }
       } else {
-        // Если адрес удален, очищаем координаты
         updateData.lat = null;
         updateData.lng = null;
       }
     }
-
-    // Обновляем профиль
     const updatedUser = await prisma.user.update({
       where: { id: userId },
       data: updateData,
@@ -252,7 +234,7 @@ export async function updateProfile(req: Request, res: Response) {
 
     return res.json(response);
   } catch (error) {
-    console.error('Error updating profile:', error);
+    logError('Ошибка обновления профиля', error);
 
     if (error instanceof Error && error.name === 'ZodError') {
       return res.status(400).json({
@@ -269,7 +251,6 @@ export async function updateProfile(req: Request, res: Response) {
 }
 
 /**
- * GET /me/appointments
  * Получить записи мастера с фильтрами
  */
 export async function getAppointments(req: Request, res: Response) {
@@ -280,12 +261,8 @@ export async function getAppointments(req: Request, res: Response) {
     }
 
     const filters = AppointmentsFilterSchema.parse(req.query);
-
-    // Формируем условия фильтрации
     const where: Prisma.AppointmentWhereInput = { masterId: userId };
 
-    // Фильтр по дате начала
-    // Поддерживаем оба варианта: from/to и dateFrom/dateTo
     const dateFrom = filters.from || filters.dateFrom;
     const dateTo = filters.to || filters.dateTo;
 
@@ -299,17 +276,14 @@ export async function getAppointments(req: Request, res: Response) {
       }
     }
 
-    // Фильтр по статусу
     if (filters.status) {
       where.status = filters.status;
     }
 
-    // Фильтр по услуге
     if (filters.serviceId) {
       where.serviceId = filters.serviceId;
     }
 
-    // Фильтр по клиенту
     if (filters.clientId) {
       where.clientId = filters.clientId;
     }
@@ -340,7 +314,7 @@ export async function getAppointments(req: Request, res: Response) {
 
     return res.json(appointments);
   } catch (error) {
-    console.error('Error fetching appointments:', error);
+    logError('Ошибка получения записей', error);
 
     if (error instanceof Error && error.name === 'ZodError') {
       return res.status(400).json({
@@ -357,7 +331,6 @@ export async function getAppointments(req: Request, res: Response) {
 }
 
 /**
- * POST /me/profile/upload-photo
  * Загрузить фото профиля в Cloudinary
  */
 export async function uploadPhoto(req: Request, res: Response) {
@@ -371,29 +344,23 @@ export async function uploadPhoto(req: Request, res: Response) {
       return res.status(400).json({ error: 'No file uploaded' });
     }
 
-    // Получаем текущего пользователя для удаления старого фото
     const currentUser = await prisma.user.findUnique({
       where: { id: userId },
       select: { photoUrl: true },
     });
 
-    // Загружаем новое фото в Cloudinary
     const imageUrl = await uploadImageToCloudinary(
       req.file.buffer,
       'beauty-crm/profiles'
     );
 
-    // Удаляем старое фото (если есть)
     if (currentUser?.photoUrl) {
       try {
         await deleteImageFromCloudinary(currentUser.photoUrl);
       } catch (error) {
-        console.error('Error deleting old photo:', error);
-        // Продолжаем даже если удаление не удалось
+        logError('Ошибка удаления старого фото', error);
       }
     }
-
-    // Обновляем photoUrl в БД
     const updatedUser = await prisma.user.update({
       where: { id: userId },
       data: { photoUrl: imageUrl },
@@ -462,7 +429,7 @@ export async function uploadPhoto(req: Request, res: Response) {
 
     return res.json(response);
   } catch (error) {
-    console.error('Error uploading photo:', error);
+    logError('Ошибка загрузки фото', error);
     return res.status(500).json({
       error: 'Failed to upload photo',
       message: error instanceof Error ? error.message : 'Unknown error',
@@ -471,7 +438,6 @@ export async function uploadPhoto(req: Request, res: Response) {
 }
 
 /**
- * PUT /me/appointments/:id
  * Обновить статус записи
  */
 export async function updateAppointmentStatus(req: Request, res: Response) {
@@ -486,10 +452,7 @@ export async function updateAppointmentStatus(req: Request, res: Response) {
       return res.status(400).json({ error: 'Appointment ID is required' });
     }
 
-    // Валидация данных
     const validatedData = UpdateAppointmentStatusSchema.parse(req.body);
-
-    // Проверяем, существует ли запись вообще
     const appointment = await prisma.appointment.findUnique({
       where: { id },
     });
@@ -502,7 +465,6 @@ export async function updateAppointmentStatus(req: Request, res: Response) {
       });
     }
 
-    // Проверяем, что запись принадлежит мастеру
     if (appointment.masterId !== masterId) {
       const forbiddenError = new ForbiddenError(
         'Appointment does not belong to the current user',
@@ -514,7 +476,6 @@ export async function updateAppointmentStatus(req: Request, res: Response) {
       });
     }
 
-    // Обновляем статус записи
     const updatedAppointment = await prisma.appointment.update({
       where: { id },
       data: { status: validatedData.status },
@@ -538,7 +499,6 @@ export async function updateAppointmentStatus(req: Request, res: Response) {
       },
     });
 
-    // Преобразуем Decimal в number для цены
     const response = {
       ...updatedAppointment,
       price: updatedAppointment.price ? Number(updatedAppointment.price) : null,
@@ -546,7 +506,7 @@ export async function updateAppointmentStatus(req: Request, res: Response) {
 
     return res.json(response);
   } catch (error) {
-    console.error('Error updating appointment status:', error);
+    logError('Ошибка обновления статуса записи', error);
 
     if (
       error instanceof AppointmentNotFoundError ||
@@ -574,7 +534,6 @@ export async function updateAppointmentStatus(req: Request, res: Response) {
 }
 
 /**
- * GET /me/clients
  * Получить список клиентов мастера с информацией о посещениях
  */
 export async function getClients(req: Request, res: Response) {
@@ -584,11 +543,10 @@ export async function getClients(req: Request, res: Response) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
 
-    // Получаем всех клиентов мастера с их завершенными посещениями
     const clients = await prisma.client.findMany({
       where: {
         masterId: userId,
-        isActive: true, // Только активные клиенты
+        isActive: true,
       },
       select: {
         id: true,
@@ -608,11 +566,9 @@ export async function getClients(req: Request, res: Response) {
         },
       },
       orderBy: {
-        name: 'asc', // Сортировка по имени
+        name: 'asc',
       },
     });
-
-    // Формируем ответ с вычисленными полями
     const clientsWithStats = clients.map(client => {
       const lastVisit =
         client.appointments.length > 0 ? client.appointments[0].startAt : null;
@@ -627,14 +583,13 @@ export async function getClients(req: Request, res: Response) {
       };
     });
 
-    // Валидируем и возвращаем ответ
     const response = clientsWithStats.map(client =>
       ClientListItemSchema.parse(client)
     );
 
     return res.json(response);
   } catch (error) {
-    console.error('Error fetching clients:', error);
+    logError('Ошибка получения клиентов', error);
 
     if (error instanceof Error && error.name === 'ZodError') {
       return res.status(400).json({
@@ -651,7 +606,6 @@ export async function getClients(req: Request, res: Response) {
 }
 
 /**
- * GET /me/clients/:id/history
  * Получить историю посещений клиента
  */
 export async function getClientHistory(req: Request, res: Response) {
@@ -666,7 +620,6 @@ export async function getClientHistory(req: Request, res: Response) {
       return res.status(400).json({ error: 'Client ID is required' });
     }
 
-    // Проверяем, что клиент принадлежит мастеру
     const client = await prisma.client.findFirst({
       where: {
         id: clientId,
@@ -678,7 +631,6 @@ export async function getClientHistory(req: Request, res: Response) {
       return res.status(404).json({ error: 'Client not found' });
     }
 
-    // Получаем все записи клиента с информацией об услуге
     const appointments = await prisma.appointment.findMany({
       where: {
         clientId,
@@ -694,11 +646,9 @@ export async function getClientHistory(req: Request, res: Response) {
         },
       },
       orderBy: {
-        startAt: 'desc', // Сначала новые записи
+        startAt: 'desc',
       },
     });
-
-    // Получаем все фото клиента
     const allPhotos = await prisma.photo.findMany({
       where: {
         clientId,
@@ -708,20 +658,16 @@ export async function getClientHistory(req: Request, res: Response) {
       },
     });
 
-    // Формируем ответ: для каждой записи находим связанные фото
-    // Фото считается связанным с записью, если оно создано в день записи или после неё,
-    // но до следующей записи (или до текущего момента, если это последняя запись)
+    // Привязываем фото к записям по дате создания: фото относится к записи,
+    // если оно создано в день записи или после неё, но до следующей записи
     const historyItems = appointments.map((appointment, index) => {
       const appointmentDate = new Date(appointment.startAt);
-      appointmentDate.setHours(0, 0, 0, 0); // Начало дня записи
+      appointmentDate.setHours(0, 0, 0, 0);
 
-      // Определяем период для фото: от даты записи до следующей записи
       const nextAppointment = appointments[index + 1];
       const periodEnd = nextAppointment
         ? new Date(nextAppointment.startAt)
-        : new Date(); // Если это последняя запись, используем текущую дату
-
-      // Фильтруем фото, которые попадают в период записи
+        : new Date();
       const relatedPhotos = allPhotos
         .filter(photo => {
           const photoDate = new Date(photo.createdAt);
@@ -747,12 +693,11 @@ export async function getClientHistory(req: Request, res: Response) {
       };
     });
 
-    // Валидируем и возвращаем ответ
     const response = ClientHistoryResponseSchema.parse(historyItems);
 
     return res.json(response);
   } catch (error) {
-    console.error('Error fetching client history:', error);
+    logError('Ошибка получения истории клиента', error);
 
     if (error instanceof Error && error.name === 'ZodError') {
       return res.status(400).json({
@@ -769,7 +714,6 @@ export async function getClientHistory(req: Request, res: Response) {
 }
 
 /**
- * POST /me/appointments/:id/photos
  * Загрузить фото к записи
  */
 export async function uploadAppointmentPhotos(req: Request, res: Response) {
@@ -784,7 +728,6 @@ export async function uploadAppointmentPhotos(req: Request, res: Response) {
       return res.status(400).json({ error: 'Appointment ID is required' });
     }
 
-    // Проверяем, что запись существует и принадлежит мастеру
     const appointment = await prisma.appointment.findUnique({
       where: { id: appointmentId },
       select: {
@@ -802,7 +745,6 @@ export async function uploadAppointmentPhotos(req: Request, res: Response) {
       });
     }
 
-    // Проверяем, что запись принадлежит мастеру
     if (appointment.masterId !== userId) {
       const forbiddenError = new ForbiddenError(
         'Appointment does not belong to the current user',
@@ -814,34 +756,26 @@ export async function uploadAppointmentPhotos(req: Request, res: Response) {
       });
     }
 
-    // Проверяем наличие файлов
     const files = req.files as Express.Multer.File[];
     if (!files || files.length === 0) {
       return res.status(400).json({ error: 'No files uploaded' });
     }
 
-    // Получаем описание из тела запроса (опционально)
-    // Если передано одно описание, оно применяется ко всем фото
-    // Если передано несколько описаний, они применяются по порядку
+    // Описание может быть строкой (применяется ко всем фото) или массивом строк (по порядку)
     const descriptions = req.body.description
       ? Array.isArray(req.body.description)
         ? req.body.description
         : [req.body.description]
       : [];
 
-    // Загружаем все фото в Cloudinary и сохраняем в БД
     const uploadedPhotos = await Promise.all(
       files.map(async (file, index) => {
-        // Загружаем фото в Cloudinary
         const imageUrl = await uploadImageToCloudinary(
           file.buffer,
           `beauty-crm/appointments/${appointmentId}`
         );
 
-        // Получаем описание для этого фото (если есть)
         const description = descriptions[index] || descriptions[0] || null;
-
-        // Сохраняем в БД
         const photo = await prisma.photo.create({
           data: {
             clientId: appointment.clientId,
@@ -859,14 +793,13 @@ export async function uploadAppointmentPhotos(req: Request, res: Response) {
       })
     );
 
-    // Валидируем и возвращаем ответ
     const response = UploadAppointmentPhotosResponseSchema.parse({
       photos: uploadedPhotos,
     });
 
     return res.status(201).json(response);
   } catch (error) {
-    console.error('Error uploading appointment photos:', error);
+    logError('Ошибка загрузки фото записи', error);
 
     if (
       error instanceof AppointmentNotFoundError ||
@@ -888,6 +821,101 @@ export async function uploadAppointmentPhotos(req: Request, res: Response) {
 
     return res.status(500).json({
       error: 'Failed to upload photos',
+      message: error instanceof Error ? error.message : 'Unknown error',
+    });
+  }
+}
+
+/**
+ * Удалить фото из записи
+ */
+export async function deleteAppointmentPhoto(req: Request, res: Response) {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const { id: appointmentId, photoId } = req.params;
+    if (!appointmentId || !photoId) {
+      return res.status(400).json({
+        error: 'Appointment ID and Photo ID are required',
+      });
+    }
+
+    const appointment = await prisma.appointment.findUnique({
+      where: { id: appointmentId },
+      select: {
+        id: true,
+        masterId: true,
+        clientId: true,
+      },
+    });
+
+    if (!appointment) {
+      const notFoundError = new AppointmentNotFoundError(appointmentId);
+      return res.status(notFoundError.statusCode).json({
+        error: notFoundError.message,
+        code: notFoundError.code,
+      });
+    }
+
+    if (appointment.masterId !== userId) {
+      const forbiddenError = new ForbiddenError(
+        'Appointment does not belong to the current user',
+        'APPOINTMENT_ACCESS_DENIED'
+      );
+      return res.status(forbiddenError.statusCode).json({
+        error: forbiddenError.message,
+        code: forbiddenError.code,
+      });
+    }
+
+    const photo = await prisma.photo.findUnique({
+      where: { id: photoId },
+      select: {
+        id: true,
+        clientId: true,
+        url: true,
+      },
+    });
+
+    if (!photo) {
+      return res.status(404).json({ error: 'Photo not found' });
+    }
+
+    if (photo.clientId !== appointment.clientId) {
+      return res.status(403).json({
+        error: 'Photo does not belong to this appointment',
+      });
+    }
+
+    try {
+      await deleteImageFromCloudinary(photo.url);
+    } catch (error) {
+      logError('Ошибка удаления фото из Cloudinary', error);
+    }
+    await prisma.photo.delete({
+      where: { id: photoId },
+    });
+
+    return res.status(204).send();
+  } catch (error) {
+    logError('Ошибка удаления фото записи', error);
+
+    if (
+      error instanceof AppointmentNotFoundError ||
+      error instanceof ForbiddenError
+    ) {
+      const appError = error as AppointmentNotFoundError | ForbiddenError;
+      return res.status(appError.statusCode).json({
+        error: appError.message,
+        code: appError.code,
+      });
+    }
+
+    return res.status(500).json({
+      error: 'Failed to delete photo',
       message: error instanceof Error ? error.message : 'Unknown error',
     });
   }

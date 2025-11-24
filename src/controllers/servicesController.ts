@@ -8,8 +8,8 @@ import {
 } from '../schemas/services';
 import { ServiceNotFoundError } from '../errors/BusinessErrors';
 import { ForbiddenError } from '../errors/AppError';
+import { logError } from '../utils/logger';
 
-// Получить все услуги мастера
 export async function getServices(req: Request, res: Response) {
   try {
     const masterId = req.user?.id;
@@ -22,7 +22,6 @@ export async function getServices(req: Request, res: Response) {
       orderBy: { createdAt: 'desc' },
     });
 
-    // Преобразуем Decimal в number для Zod валидации
     const servicesWithNumbers = services.map(service => ({
       ...service,
       price: Number(service.price),
@@ -31,7 +30,7 @@ export async function getServices(req: Request, res: Response) {
     const response = ServicesListResponseSchema.parse(servicesWithNumbers);
     return res.json(response);
   } catch (error) {
-    console.error('Error fetching services:', error);
+    logError('Ошибка получения услуг', error);
     return res.status(500).json({
       error: 'Failed to fetch services',
       message: error instanceof Error ? error.message : 'Unknown error',
@@ -39,7 +38,6 @@ export async function getServices(req: Request, res: Response) {
   }
 }
 
-// Создать новую услугу
 export async function createService(req: Request, res: Response) {
   try {
     const masterId = req.user?.id;
@@ -56,7 +54,6 @@ export async function createService(req: Request, res: Response) {
       },
     });
 
-    // Преобразуем Decimal в number для Zod валидации
     const serviceWithNumber = {
       ...service,
       price: Number(service.price),
@@ -65,7 +62,7 @@ export async function createService(req: Request, res: Response) {
     const response = ServiceResponseSchema.parse(serviceWithNumber);
     return res.status(201).json(response);
   } catch (error) {
-    console.error('Error creating service:', error);
+    logError('Ошибка создания услуги', error);
 
     if (error instanceof Error && error.name === 'ZodError') {
       return res.status(400).json({
@@ -81,7 +78,6 @@ export async function createService(req: Request, res: Response) {
   }
 }
 
-// Обновить услугу
 export async function updateService(req: Request, res: Response) {
   try {
     const masterId = req.user?.id;
@@ -94,7 +90,6 @@ export async function updateService(req: Request, res: Response) {
       return res.status(400).json({ error: 'Service ID is required' });
     }
 
-    // Проверяем, существует ли услуга вообще
     const existingService = await prisma.service.findUnique({
       where: { id },
     });
@@ -107,7 +102,6 @@ export async function updateService(req: Request, res: Response) {
       });
     }
 
-    // Проверяем, что услуга принадлежит мастеру
     if (existingService.masterId !== masterId) {
       const forbiddenError = new ForbiddenError(
         'Service does not belong to the current user',
@@ -126,7 +120,6 @@ export async function updateService(req: Request, res: Response) {
       data: validatedData,
     });
 
-    // Преобразуем Decimal в number для Zod валидации
     const serviceWithNumber = {
       ...service,
       price: Number(service.price),
@@ -135,7 +128,7 @@ export async function updateService(req: Request, res: Response) {
     const response = ServiceResponseSchema.parse(serviceWithNumber);
     return res.json(response);
   } catch (error) {
-    console.error('Error updating service:', error);
+    logError('Ошибка обновления услуги', error);
 
     if (error instanceof Error && error.name === 'ZodError') {
       return res.status(400).json({
@@ -151,7 +144,6 @@ export async function updateService(req: Request, res: Response) {
   }
 }
 
-// Удалить услугу
 export async function deleteService(req: Request, res: Response) {
   try {
     const masterId = req.user?.id;
@@ -164,7 +156,6 @@ export async function deleteService(req: Request, res: Response) {
       return res.status(400).json({ error: 'Service ID is required' });
     }
 
-    // Проверяем, существует ли услуга вообще
     const existingService = await prisma.service.findUnique({
       where: { id },
     });
@@ -177,7 +168,6 @@ export async function deleteService(req: Request, res: Response) {
       });
     }
 
-    // Проверяем, что услуга принадлежит мастеру
     if (existingService.masterId !== masterId) {
       const forbiddenError = new ForbiddenError(
         'Service does not belong to the current user',
@@ -189,7 +179,6 @@ export async function deleteService(req: Request, res: Response) {
       });
     }
 
-    // Проверяем, есть ли активные записи на эту услугу
     const activeAppointments = await prisma.appointment.findFirst({
       where: {
         serviceId: id,
@@ -213,7 +202,7 @@ export async function deleteService(req: Request, res: Response) {
 
     return res.status(204).send();
   } catch (error) {
-    console.error('Error deleting service:', error);
+    logError('Ошибка удаления услуги', error);
 
     return res.status(500).json({
       error: 'Failed to delete service',
@@ -222,7 +211,6 @@ export async function deleteService(req: Request, res: Response) {
   }
 }
 
-// Получить услугу по ID
 export async function getServiceById(req: Request, res: Response) {
   try {
     const masterId = req.user?.id;
@@ -235,7 +223,6 @@ export async function getServiceById(req: Request, res: Response) {
       return res.status(400).json({ error: 'Service ID is required' });
     }
 
-    // Проверяем, существует ли услуга вообще
     const service = await prisma.service.findUnique({
       where: { id },
     });
@@ -248,7 +235,6 @@ export async function getServiceById(req: Request, res: Response) {
       });
     }
 
-    // Проверяем, что услуга принадлежит мастеру
     if (service.masterId !== masterId) {
       const forbiddenError = new ForbiddenError(
         'Service does not belong to the current user',
@@ -260,7 +246,6 @@ export async function getServiceById(req: Request, res: Response) {
       });
     }
 
-    // Преобразуем Decimal в number для Zod валидации
     const serviceWithNumber = {
       ...service,
       price: Number(service.price),
@@ -269,7 +254,7 @@ export async function getServiceById(req: Request, res: Response) {
     const response = ServiceResponseSchema.parse(serviceWithNumber);
     return res.json(response);
   } catch (error) {
-    console.error('Error fetching service:', error);
+    logError('Ошибка получения услуги', error);
 
     return res.status(500).json({
       error: 'Failed to fetch service',

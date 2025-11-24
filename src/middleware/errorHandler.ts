@@ -152,7 +152,7 @@ export const unhandledErrorHandler = (
   req: Request,
   res: Response
 ): void => {
-  console.error('Unhandled error:', error);
+  logError('Необработанная ошибка', error);
 
   const errorResponse: ErrorResponse = {
     error: 'Internal Server Error',

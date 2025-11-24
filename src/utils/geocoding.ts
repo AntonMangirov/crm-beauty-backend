@@ -1,17 +1,11 @@
 /**
  * Утилита для геокодинга адресов через Nominatim API (OpenStreetMap)
- *
- * Особенности:
- * - Бесплатный сервис
- * - Rate limit: 1 запрос в секунду (соблюдается автоматически)
- * - Кеширование результатов в БД (не делаем повторные запросы)
- *
- * Альтернативы:
- * - Yandex Geocoder API (платный, но точнее для России)
- * - DaData (платный, очень точный для России)
+ * Rate limit: 1 запрос в секунду (соблюдается автоматически)
+ * Результаты кешируются в БД
  */
 
 import { PrismaClient } from '@prisma/client';
+import { logError } from './logger';
 
 interface GeocodingResult {
   lat: number;
@@ -24,9 +18,8 @@ interface NominatimResponse {
   display_name?: string;
 }
 
-// Кеш для rate limiting (1 запрос в секунду)
 let lastRequestTime = 0;
-const MIN_REQUEST_INTERVAL = 1000; // 1 секунда
+const MIN_REQUEST_INTERVAL = 1000;
 
 /**
  * Геокодинг адреса через Nominatim API
@@ -41,7 +34,7 @@ export async function geocodeAddress(
   }
 
   try {
-    // Соблюдаем rate limit (1 запрос в секунду)
+    // Rate limit: 1 запрос в секунду
     const now = Date.now();
     const timeSinceLastRequest = now - lastRequestTime;
     if (timeSinceLastRequest < MIN_REQUEST_INTERVAL) {
@@ -50,14 +43,10 @@ export async function geocodeAddress(
     }
     lastRequestTime = Date.now();
 
-    // Формируем URL для Nominatim API
     const encodedAddress = encodeURIComponent(address);
-    // Используем более простой endpoint без addressdetails для уменьшения нагрузки
     const url = `https://nominatim.openstreetmap.org/search?q=${encodedAddress}&format=json&limit=1`;
 
-    // Делаем запрос с правильным User-Agent (требуется Nominatim)
     // Nominatim требует уникальный User-Agent с контактной информацией
-    // Формат: AppName/Version (website; email)
     const userAgent =
       process.env.GEOCODING_USER_AGENT ||
       'CRM-Beauty-Backend/1.0 (http://localhost:3000; admin@localhost)';
@@ -71,16 +60,16 @@ export async function geocodeAddress(
     });
 
     if (!response.ok) {
-      console.error(
-        `[GEOCODING] Nominatim API error: ${response.status} ${response.statusText}`
-      );
+      logError('Ошибка Nominatim API', undefined, {
+        status: response.status,
+        statusText: response.statusText,
+      });
       return null;
     }
 
     const data = (await response.json()) as NominatimResponse[];
 
     if (!data || data.length === 0) {
-      console.log(`[GEOCODING] Address not found: ${address}`);
       return null;
     }
 
@@ -89,19 +78,12 @@ export async function geocodeAddress(
     const lng = parseFloat(result.lon);
 
     if (isNaN(lat) || isNaN(lng)) {
-      console.error(
-        `[GEOCODING] Invalid coordinates: ${result.lat}, ${result.lon}`
-      );
       return null;
     }
 
-    console.log(
-      `[GEOCODING] Successfully geocoded: ${address} -> (${lat}, ${lng})`
-    );
-
     return { lat, lng };
   } catch (error) {
-    console.error(`[GEOCODING] Error geocoding address "${address}":`, error);
+    logError(`Ошибка геокодинга адреса "${address}"`, error);
     return null;
   }
 }
@@ -125,13 +107,11 @@ export async function geocodeAndCache(
     return null;
   }
 
-  // Проверяем, есть ли уже координаты в БД
   const user = await prisma.user.findUnique({
     where: { id: userId },
     select: { lat: true, lng: true, address: true },
   });
 
-  // Если координаты уже есть и адрес не изменился - возвращаем их
   if (user?.lat && user?.lng && user?.address === address) {
     return {
       lat: Number(user.lat),
@@ -139,11 +119,9 @@ export async function geocodeAndCache(
     };
   }
 
-  // Если адрес изменился или координат нет - делаем геокодинг
   const coordinates = await geocodeAddress(address);
 
   if (coordinates) {
-    // Сохраняем координаты в БД
     await prisma.user.update({
       where: { id: userId },
       data: {

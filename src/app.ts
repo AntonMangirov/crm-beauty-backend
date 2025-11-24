@@ -32,37 +32,24 @@ dotenv.config();
 
 const app = express();
 
-// 1. CORS logger (для отладки)
 app.use(corsLogger);
-
-// 2. Body parsing middleware (до rate limiting, чтобы body был доступен)
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// Статические файлы для локальных загрузок
-// Используется если UPLOAD_MODE=local или не указаны переменные Cloudinary
 const uploadMode = process.env.UPLOAD_MODE || 'local';
 const hasCloudinary = !!process.env.CLOUDINARY_CLOUD_NAME;
 
 if (uploadMode === 'local' || !hasCloudinary) {
   app.use('/uploads', express.static('uploads'));
-  console.log('[UPLOAD] Using local file storage: /uploads');
 }
 
-// 3. Базовые middleware безопасности (БЕЗ Helmet пока, чтобы не блокировать CORS)
 app.use(securityHeaders);
-app.use(requestSizeLimit(10 * 1024 * 1024)); // 10MB лимит
+app.use(requestSizeLimit(10 * 1024 * 1024));
 app.use(sanitizeInput);
-
-// 4. Time middleware
 app.use(timeLoggingMiddleware);
 app.use(addTimeStampsMiddleware);
 app.use(timezoneMiddleware);
-
-// 5. Общий rate limiting
 app.use(generalRateLimit);
-
-// 6. Root endpoint (информация об API)
 app.get('/', (req, res) => {
   res.json({
     name: 'CRM Beauty Backend API',
@@ -79,16 +66,12 @@ app.get('/', (req, res) => {
   });
 });
 
-// 7. Специфичные CORS и rate limiting для разных endpoints
 app.use('/api/auth', authCorsConfig, authRateLimit, authRouter);
 app.use('/api/public', publicCorsConfig, publicRateLimit, publicRouter);
 app.use('/api/services', corsConfig, servicesRouter);
 app.use('/api/me', corsConfig, meRouter);
-
-// 8. Helmet применяется ПОСЛЕ CORS, чтобы не блокировать заголовки
 app.use(helmetConfig);
 
-// Health check endpoint
 app.get('/api/health', (req, res) => {
   res.json({
     status: 'OK',
@@ -97,7 +80,6 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-// Database connection test
 app.get('/api/db/status', async (req, res) => {
   try {
     await prisma.$queryRaw`SELECT 1`;
@@ -115,7 +97,6 @@ app.get('/api/db/status', async (req, res) => {
   }
 });
 
-// Get all users (защищённый эндпоинт для админов)
 app.get('/api/users', corsConfig, auth, async (req, res) => {
   try {
     const users = await prisma.user.findMany({
@@ -138,12 +119,6 @@ app.get('/api/users', corsConfig, auth, async (req, res) => {
   }
 });
 
-// Приватный список встреч мастера (по userId из токена)
-// УДАЛЕНО: дублирование функциональности
-// Используйте GET /api/me/appointments вместо этого
-// Старый эндпоинт оставлен для обратной совместимости, но рекомендуется использовать /api/me/appointments
-
-// Error handling middleware (должен быть последним)
 app.use(notFoundHandler);
 app.use(errorHandler);
 
