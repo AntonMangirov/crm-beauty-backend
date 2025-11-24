@@ -25,7 +25,8 @@
     "update-address": "ts-node scripts/update-master-address.ts",
     "fix-address": "ts-node scripts/fix-address.ts",
     "update-contacts": "ts-node scripts/update-master-contacts.ts",
-    "apply-migration": "ts-node scripts/apply-migration-manually.ts"
+    "apply-migration": "ts-node scripts/apply-migration-manually.ts",
+    "check-protected": "ts-node scripts/check-protected-endpoints.ts"
   },
   "repository": {
     "type": "git",
@@ -45,6 +46,7 @@
     "bcryptjs": "^3.0.2",
     "bull": "^4.16.5",
     "cloudinary": "^2.8.0",
+    "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
     "date-fns": "^4.1.0",
     "dotenv": "^17.2.2",
@@ -59,6 +61,7 @@
   "devDependencies": {
     "@types/bcrypt": "^5.0.2",
     "@types/bull": "^3.15.9",
+    "@types/cookie-parser": "^1.4.10",
     "@types/cors": "^2.8.17",
     "@types/express": "^5.0.0",
     "@types/helmet": "^0.0.48",

@@ -67,13 +67,17 @@ export const corsConfig = cors({
 
 export const authCorsConfig = cors({
   origin: (origin, callback) => {
+    // В тестовом окружении разрешаем запросы без origin (supertest)
+    if (process.env.NODE_ENV === 'test' && !origin) {
+      return callback(null, true);
+    }
     if (!origin) {
       return callback(new Error('Origin required for authentication'), false);
     }
     return originCheck(origin, callback);
   },
   credentials: true,
-  methods: ['POST', 'OPTIONS'],
+  methods: ['GET', 'POST', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
   maxAge: 300,
   optionsSuccessStatus: 200,

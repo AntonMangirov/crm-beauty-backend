@@ -24,6 +24,8 @@ model User {
   whatsappUrl  String?       // Ссылка на WhatsApp
   backgroundImageUrl String?  // Фоновое изображение для карточки мастера
   rating       Decimal?      @db.Decimal(3, 2)   // Средняя оценка из отзывов (0.00 - 5.00)
+  refreshToken String?       @unique            // Refresh token для долгосрочной аутентификации
+  refreshTokenExpires DateTime?                  // Срок действия refresh token
   isActive      Boolean       @default(true)
   role          UserRole      @default(MASTER)
   createdAt     DateTime      @default(now())

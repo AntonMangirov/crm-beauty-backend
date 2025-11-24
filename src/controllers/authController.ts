@@ -10,6 +10,10 @@ import {
 } from '../schemas/auth';
 import { hashPassword, verifyPassword } from '../utils/password';
 import { logError } from '../utils/logger';
+import {
+  issueRefreshToken,
+  getRefreshTokenCookieOptions,
+} from './refreshController';
 
 declare global {
   namespace Express {
@@ -91,13 +95,20 @@ export async function login(req: Request, res: Response) {
     const ok = await verifyPassword(password, user.passwordHash);
     if (!ok) return res.status(401).json({ error: 'Invalid credentials' });
 
-    const token = jwt.sign(
+    // Создаем access token (15 минут)
+    const accessToken = jwt.sign(
       { userId: user.id },
       process.env.JWT_SECRET as string,
-      { expiresIn: '7d' }
+      { expiresIn: '15m' }
     );
 
-    const response = LoginResponseSchema.parse({ token });
+    // Создаем и сохраняем refresh token
+    const { token: refreshToken } = await issueRefreshToken(user.id);
+
+    // Устанавливаем refresh token в HttpOnly cookie
+    res.cookie('refreshToken', refreshToken, getRefreshTokenCookieOptions());
+
+    const response = LoginResponseSchema.parse({ token: accessToken });
     return res.json(response);
   } catch (err) {
     logError('Ошибка входа', err);
@@ -108,7 +119,9 @@ export async function login(req: Request, res: Response) {
 export async function me(req: Request, res: Response) {
   try {
     const userId = req.user?.id;
-    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
 
     const user = await prisma.user.findUnique({
       where: { id: userId },
@@ -123,10 +136,16 @@ export async function me(req: Request, res: Response) {
       },
     });
 
-    if (!user) return res.status(404).json({ error: 'User not found' });
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
     return res.json(user);
   } catch (err) {
     logError('Ошибка получения профиля', err);
-    return res.status(500).json({ error: 'Server error' });
+    return res.status(500).json({
+      error: 'Server error',
+      message: err instanceof Error ? err.message : 'Unknown error',
+    });
   }
 }

@@ -1043,13 +1043,23 @@ export async function getAnalytics(req: Request, res: Response) {
     ]);
 
     const appointmentsCount = appointmentsCountResult[0]?.count ?? BigInt(0);
-    const revenue = revenueResult[0]?.revenue ?? 0;
+    const revenueRaw = revenueResult[0]?.revenue ?? 0;
     const newClients = newClientsStatsResult[0]?.new_clients ?? BigInt(0);
     const totalClients = newClientsStatsResult[0]?.total_clients ?? BigInt(0);
 
-    // Вычисляем процент новых клиентов
+    // Преобразуем revenue в число (может быть Decimal, string или bigint)
+    const revenue =
+      typeof revenueRaw === 'string'
+        ? parseFloat(revenueRaw)
+        : typeof revenueRaw === 'bigint'
+          ? Number(revenueRaw)
+          : Number(revenueRaw) || 0;
+
+    // Вычисляем процент новых клиентов (преобразуем BigInt в Number перед вычислениями)
+    const totalClientsNum = Number(totalClients);
+    const newClientsNum = Number(newClients);
     const newClientsPercentage =
-      totalClients > 0 ? Number((newClients * BigInt(100)) / totalClients) : 0;
+      totalClientsNum > 0 ? (newClientsNum * 100) / totalClientsNum : 0;
 
     const topServices = topServicesResult.map(service => ({
       id: service.id,

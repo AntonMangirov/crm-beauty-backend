@@ -1,5 +1,6 @@
 import express from 'express';
 import dotenv from 'dotenv';
+import cookieParser from 'cookie-parser';
 import prisma from './prismaClient';
 import authRouter from './routes/auth';
 import publicRouter from './routes/public';
@@ -33,6 +34,7 @@ dotenv.config();
 const app = express();
 
 app.use(corsLogger);
+app.use(cookieParser());
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
@@ -49,7 +51,10 @@ app.use(sanitizeInput);
 app.use(timeLoggingMiddleware);
 app.use(addTimeStampsMiddleware);
 app.use(timezoneMiddleware);
-app.use(generalRateLimit);
+// Отключаем rate limiting в тестовом окружении
+if (process.env.NODE_ENV !== 'test') {
+  app.use(generalRateLimit);
+}
 app.get('/', (req, res) => {
   res.json({
     name: 'CRM Beauty Backend API',
@@ -66,8 +71,14 @@ app.get('/', (req, res) => {
   });
 });
 
-app.use('/api/auth', authCorsConfig, authRateLimit, authRouter);
-app.use('/api/public', publicCorsConfig, publicRateLimit, publicRouter);
+// Применяем rate limiting только если не тестовое окружение
+if (process.env.NODE_ENV === 'test') {
+  app.use('/api/auth', authCorsConfig, authRouter);
+  app.use('/api/public', publicCorsConfig, publicRouter);
+} else {
+  app.use('/api/auth', authCorsConfig, authRateLimit, authRouter);
+  app.use('/api/public', publicCorsConfig, publicRateLimit, publicRouter);
+}
 app.use('/api/services', corsConfig, servicesRouter);
 app.use('/api/me', corsConfig, meRouter);
 app.use(helmetConfig);
@@ -120,6 +131,21 @@ app.get('/api/users', corsConfig, auth, async (req, res) => {
 });
 
 app.use(notFoundHandler);
-app.use(errorHandler);
+
+// Error handler должен быть последним и иметь правильную сигнатуру для Express 5
+app.use(
+  (
+    err: Error,
+    req: express.Request,
+    res: express.Response,
+    next: express.NextFunction
+  ) => {
+    // Проверяем, не был ли ответ уже отправлен
+    if (res.headersSent) {
+      return next(err);
+    }
+    errorHandler(err, req, res, next);
+  }
+);
 
 export default app;
