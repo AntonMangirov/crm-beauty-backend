@@ -8,6 +8,7 @@ import {
   updateAppointmentStatus,
   getClients,
   getClientHistory,
+  uploadAppointmentPhotos,
 } from '../controllers/meController';
 import {
   getServices,
@@ -37,6 +38,13 @@ router.get('/appointments', getAppointments);
 
 // PUT /api/me/appointments/:id - обновить статус записи
 router.put('/appointments/:id', updateAppointmentStatus);
+
+// POST /api/me/appointments/:id/photos - загрузить фото к записи
+router.post(
+  '/appointments/:id/photos',
+  upload.array('photos', 10), // Максимум 10 фото за раз
+  uploadAppointmentPhotos
+);
 
 // GET /api/me/clients - получить список клиентов мастера
 router.get('/clients', getClients);

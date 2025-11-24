@@ -156,3 +156,20 @@ export const ClientHistoryResponseSchema = z.array(ClientHistoryItemSchema);
 
 export type ClientHistoryItem = z.infer<typeof ClientHistoryItemSchema>;
 export type ClientHistoryResponse = z.infer<typeof ClientHistoryResponseSchema>;
+
+// Схема для ответа загрузки фото к записи
+export const UploadedPhotoSchema = z.object({
+  id: z.string(),
+  url: z.string(),
+  description: z.string().nullable(),
+  createdAt: z.date(),
+});
+
+export const UploadAppointmentPhotosResponseSchema = z.object({
+  photos: z.array(UploadedPhotoSchema),
+});
+
+export type UploadedPhoto = z.infer<typeof UploadedPhotoSchema>;
+export type UploadAppointmentPhotosResponse = z.infer<
+  typeof UploadAppointmentPhotosResponseSchema
+>;

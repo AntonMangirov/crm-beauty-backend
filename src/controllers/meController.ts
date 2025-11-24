@@ -7,6 +7,7 @@ import {
   UpdateAppointmentStatusSchema,
   ClientListItemSchema,
   ClientHistoryResponseSchema,
+  UploadAppointmentPhotosResponseSchema,
 } from '../schemas/me';
 import { Prisma } from '@prisma/client';
 import { geocodeAndCache } from '../utils/geocoding';
@@ -762,6 +763,131 @@ export async function getClientHistory(req: Request, res: Response) {
 
     return res.status(500).json({
       error: 'Failed to fetch client history',
+      message: error instanceof Error ? error.message : 'Unknown error',
+    });
+  }
+}
+
+/**
+ * POST /me/appointments/:id/photos
+ * Загрузить фото к записи
+ */
+export async function uploadAppointmentPhotos(req: Request, res: Response) {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const { id: appointmentId } = req.params;
+    if (!appointmentId) {
+      return res.status(400).json({ error: 'Appointment ID is required' });
+    }
+
+    // Проверяем, что запись существует и принадлежит мастеру
+    const appointment = await prisma.appointment.findUnique({
+      where: { id: appointmentId },
+      select: {
+        id: true,
+        masterId: true,
+        clientId: true,
+      },
+    });
+
+    if (!appointment) {
+      const notFoundError = new AppointmentNotFoundError(appointmentId);
+      return res.status(notFoundError.statusCode).json({
+        error: notFoundError.message,
+        code: notFoundError.code,
+      });
+    }
+
+    // Проверяем, что запись принадлежит мастеру
+    if (appointment.masterId !== userId) {
+      const forbiddenError = new ForbiddenError(
+        'Appointment does not belong to the current user',
+        'APPOINTMENT_ACCESS_DENIED'
+      );
+      return res.status(forbiddenError.statusCode).json({
+        error: forbiddenError.message,
+        code: forbiddenError.code,
+      });
+    }
+
+    // Проверяем наличие файлов
+    const files = req.files as Express.Multer.File[];
+    if (!files || files.length === 0) {
+      return res.status(400).json({ error: 'No files uploaded' });
+    }
+
+    // Получаем описание из тела запроса (опционально)
+    // Если передано одно описание, оно применяется ко всем фото
+    // Если передано несколько описаний, они применяются по порядку
+    const descriptions = req.body.description
+      ? Array.isArray(req.body.description)
+        ? req.body.description
+        : [req.body.description]
+      : [];
+
+    // Загружаем все фото в Cloudinary и сохраняем в БД
+    const uploadedPhotos = await Promise.all(
+      files.map(async (file, index) => {
+        // Загружаем фото в Cloudinary
+        const imageUrl = await uploadImageToCloudinary(
+          file.buffer,
+          `beauty-crm/appointments/${appointmentId}`
+        );
+
+        // Получаем описание для этого фото (если есть)
+        const description = descriptions[index] || descriptions[0] || null;
+
+        // Сохраняем в БД
+        const photo = await prisma.photo.create({
+          data: {
+            clientId: appointment.clientId,
+            url: imageUrl,
+            description: description || null,
+          },
+        });
+
+        return {
+          id: photo.id,
+          url: photo.url,
+          description: photo.description,
+          createdAt: photo.createdAt,
+        };
+      })
+    );
+
+    // Валидируем и возвращаем ответ
+    const response = UploadAppointmentPhotosResponseSchema.parse({
+      photos: uploadedPhotos,
+    });
+
+    return res.status(201).json(response);
+  } catch (error) {
+    console.error('Error uploading appointment photos:', error);
+
+    if (
+      error instanceof AppointmentNotFoundError ||
+      error instanceof ForbiddenError
+    ) {
+      const appError = error as AppointmentNotFoundError | ForbiddenError;
+      return res.status(appError.statusCode).json({
+        error: appError.message,
+        code: appError.code,
+      });
+    }
+
+    if (error instanceof Error && error.name === 'ZodError') {
+      return res.status(400).json({
+        error: 'Validation error',
+        details: error.message,
+      });
+    }
+
+    return res.status(500).json({
+      error: 'Failed to upload photos',
       message: error instanceof Error ? error.message : 'Unknown error',
     });
   }
