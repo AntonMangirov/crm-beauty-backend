@@ -10,6 +10,7 @@ import {
   getClientHistory,
   uploadAppointmentPhotos,
   deleteAppointmentPhoto,
+  getAnalytics,
 } from '../controllers/meController';
 import {
   getServices,
@@ -70,5 +71,8 @@ router.patch('/services/:id', updateService);
 
 // DELETE /api/me/services/:id - удалить услугу
 router.delete('/services/:id', deleteService);
+
+// GET /api/me/analytics - получить аналитику за текущий месяц
+router.get('/analytics', getAnalytics);
 
 export default router;

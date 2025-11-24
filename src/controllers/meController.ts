@@ -8,6 +8,7 @@ import {
   ClientListItemSchema,
   ClientHistoryResponseSchema,
   UploadAppointmentPhotosResponseSchema,
+  AnalyticsResponseSchema,
 } from '../schemas/me';
 import { Prisma } from '@prisma/client';
 import { geocodeAndCache } from '../utils/geocoding';
@@ -312,7 +313,50 @@ export async function getAppointments(req: Request, res: Response) {
       orderBy: { startAt: 'desc' },
     });
 
-    return res.json(appointments);
+    // Получаем все фото для клиентов из записей
+    const clientIds = [...new Set(appointments.map(apt => apt.clientId))];
+    const allPhotos = await prisma.photo.findMany({
+      where: {
+        clientId: { in: clientIds },
+      },
+      orderBy: {
+        createdAt: 'asc',
+      },
+    });
+
+    // Привязываем фото к записям по дате создания
+    const appointmentsWithPhotos = appointments.map((appointment, index) => {
+      const appointmentDate = new Date(appointment.startAt);
+      appointmentDate.setHours(0, 0, 0, 0);
+
+      const nextAppointment = appointments[index + 1];
+      const periodEnd = nextAppointment
+        ? new Date(nextAppointment.startAt)
+        : new Date();
+
+      const relatedPhotos = allPhotos
+        .filter(photo => {
+          const photoDate = new Date(photo.createdAt);
+          return (
+            photo.clientId === appointment.clientId &&
+            photoDate >= appointmentDate &&
+            photoDate <= periodEnd
+          );
+        })
+        .map(photo => ({
+          id: photo.id,
+          url: photo.url,
+          description: photo.description,
+          createdAt: photo.createdAt,
+        }));
+
+      return {
+        ...appointment,
+        photos: relatedPhotos,
+      };
+    });
+
+    return res.json(appointmentsWithPhotos);
   } catch (error) {
     logError('Ошибка получения записей', error);
 
@@ -564,6 +608,11 @@ export async function getClients(req: Request, res: Response) {
             startAt: 'desc',
           },
         },
+        _count: {
+          select: {
+            photos: true,
+          },
+        },
       },
       orderBy: {
         name: 'asc',
@@ -573,6 +622,7 @@ export async function getClients(req: Request, res: Response) {
       const lastVisit =
         client.appointments.length > 0 ? client.appointments[0].startAt : null;
       const visitsCount = client.appointments.length;
+      const photosCount = client._count.photos;
 
       return {
         id: client.id,
@@ -580,6 +630,7 @@ export async function getClients(req: Request, res: Response) {
         phone: client.phone,
         lastVisit,
         visitsCount,
+        photosCount,
       };
     });
 
@@ -916,6 +967,108 @@ export async function deleteAppointmentPhoto(req: Request, res: Response) {
 
     return res.status(500).json({
       error: 'Failed to delete photo',
+      message: error instanceof Error ? error.message : 'Unknown error',
+    });
+  }
+}
+
+/**
+ * Получить аналитику за текущий месяц
+ * Подсчёты выполняются на уровне SQL
+ */
+export async function getAnalytics(req: Request, res: Response) {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    // Определяем начало и конец текущего месяца
+    const now = new Date();
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    startOfMonth.setUTCHours(0, 0, 0, 0);
+    const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+    endOfMonth.setUTCHours(23, 59, 59, 999);
+
+    // Выполняем все запросы параллельно для оптимизации
+    const [
+      appointmentsCountResult,
+      revenueResult,
+      topServicesResult,
+      newClientsStatsResult,
+    ] = await Promise.all([
+      // Количество записей за месяц
+      prisma.$queryRaw<Array<{ count: bigint }>>`
+        SELECT COUNT(*)::int as count
+        FROM "Appointment"
+        WHERE "masterId" = ${userId}
+          AND "startAt" >= ${startOfMonth}
+          AND "startAt" <= ${endOfMonth}
+      `,
+      // Доход за месяц (сумма цен завершённых записей)
+      prisma.$queryRaw<Array<{ revenue: number | null }>>`
+        SELECT COALESCE(SUM("price"), 0)::decimal as revenue
+        FROM "Appointment"
+        WHERE "masterId" = ${userId}
+          AND "status" = 'COMPLETED'
+          AND "startAt" >= ${startOfMonth}
+          AND "startAt" <= ${endOfMonth}
+      `,
+      // Топ 5 услуг по количеству записей
+      prisma.$queryRaw<Array<{ id: string; name: string; count: bigint }>>`
+        SELECT 
+          s."id",
+          s."name",
+          COUNT(a."id")::int as count
+        FROM "Service" s
+        INNER JOIN "Appointment" a ON s."id" = a."serviceId"
+        WHERE s."masterId" = ${userId}
+          AND s."isActive" = true
+          AND a."masterId" = ${userId}
+          AND a."startAt" >= ${startOfMonth}
+          AND a."startAt" <= ${endOfMonth}
+        GROUP BY s."id", s."name"
+        ORDER BY count DESC, s."name" ASC
+        LIMIT 5
+      `,
+      // Статистика новых клиентов
+      prisma.$queryRaw<Array<{ new_clients: bigint; total_clients: bigint }>>`
+        SELECT 
+          COUNT(CASE WHEN "createdAt" >= ${startOfMonth} AND "createdAt" <= ${endOfMonth} THEN 1 END)::int as new_clients,
+          COUNT(*)::int as total_clients
+        FROM "Client"
+        WHERE "masterId" = ${userId}
+          AND "isActive" = true
+      `,
+    ]);
+
+    const appointmentsCount = appointmentsCountResult[0]?.count ?? BigInt(0);
+    const revenue = revenueResult[0]?.revenue ?? 0;
+    const newClients = newClientsStatsResult[0]?.new_clients ?? BigInt(0);
+    const totalClients = newClientsStatsResult[0]?.total_clients ?? BigInt(0);
+
+    // Вычисляем процент новых клиентов
+    const newClientsPercentage =
+      totalClients > 0 ? Number((newClients * BigInt(100)) / totalClients) : 0;
+
+    const topServices = topServicesResult.map(service => ({
+      id: service.id,
+      name: service.name,
+      count: Number(service.count),
+    }));
+
+    const response = AnalyticsResponseSchema.parse({
+      appointmentsCount: Number(appointmentsCount),
+      revenue: Number(revenue),
+      topServices,
+      newClientsPercentage,
+    });
+
+    return res.json(response);
+  } catch (error) {
+    logError('Ошибка получения аналитики', error);
+    return res.status(500).json({
+      error: 'Failed to fetch analytics',
       message: error instanceof Error ? error.message : 'Unknown error',
     });
   }

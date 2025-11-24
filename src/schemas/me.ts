@@ -128,6 +128,7 @@ export const ClientListItemSchema = z.object({
   phone: z.string().nullable(),
   lastVisit: z.date().nullable(), // Дата последнего завершенного посещения
   visitsCount: z.number(), // Количество завершенных посещений
+  photosCount: z.number(), // Количество фото у клиента
 });
 
 export type ClientListItem = z.infer<typeof ClientListItemSchema>;
@@ -173,3 +174,19 @@ export type UploadedPhoto = z.infer<typeof UploadedPhotoSchema>;
 export type UploadAppointmentPhotosResponse = z.infer<
   typeof UploadAppointmentPhotosResponseSchema
 >;
+
+// Схема для ответа аналитики
+export const AnalyticsResponseSchema = z.object({
+  appointmentsCount: z.number(), // Количество записей за месяц
+  revenue: z.number(), // Доход за месяц
+  topServices: z.array(
+    z.object({
+      id: z.string(),
+      name: z.string(),
+      count: z.number(), // Количество записей
+    })
+  ), // Топ 5 услуг
+  newClientsPercentage: z.number(), // % новых клиентов
+});
+
+export type AnalyticsResponse = z.infer<typeof AnalyticsResponseSchema>;
