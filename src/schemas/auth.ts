@@ -5,6 +5,7 @@ export const RegisterRequestSchema = z.object({
   password: z.string().min(6).max(128),
   name: z.string().min(1).max(100),
   phone: z.string().min(3).max(32).optional(),
+  recaptchaToken: z.string().min(1).optional(),
 });
 export type RegisterRequest = z.infer<typeof RegisterRequestSchema>;
 

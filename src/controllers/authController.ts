@@ -10,6 +10,7 @@ import {
 } from '../schemas/auth';
 import { hashPassword, verifyPassword } from '../utils/password';
 import { logError } from '../utils/logger';
+import { verifyCaptcha } from '../utils/recaptcha';
 import {
   issueRefreshToken,
   getRefreshTokenCookieOptions,
@@ -25,13 +26,32 @@ declare global {
 
 export async function register(req: Request, res: Response) {
   try {
-    const { email, password, name, phone } = RegisterRequestSchema.parse(
-      req.body
-    );
+    const { email, password, name, phone, recaptchaToken } =
+      RegisterRequestSchema.parse(req.body);
     if (!email || !password || !name) {
       return res
         .status(400)
         .json({ error: 'email, password and name are required' });
+    }
+
+    // Проверка reCAPTCHA
+    if (recaptchaToken) {
+      const isCaptchaValid = await verifyCaptcha(recaptchaToken);
+      if (!isCaptchaValid) {
+        return res.status(400).json({
+          error: 'reCAPTCHA verification failed',
+          message:
+            'Проверка на бота не пройдена. Пожалуйста, попробуйте снова.',
+        });
+      }
+    } else {
+      // В production капча обязательна
+      if (process.env.NODE_ENV === 'production') {
+        return res.status(400).json({
+          error: 'reCAPTCHA token required',
+          message: 'Токен reCAPTCHA обязателен',
+        });
+      }
     }
 
     const existing = await prisma.user.findUnique({ where: { email } });
