@@ -190,6 +190,8 @@ export async function bookPublicSlot(req: Request, res: Response) {
       comment,
       recaptchaToken,
       source,
+      price,
+      durationOverride,
     } = req.body as {
       name: string;
       phone?: string;
@@ -199,6 +201,8 @@ export async function bookPublicSlot(req: Request, res: Response) {
       comment?: string;
       recaptchaToken?: string;
       source?: 'MANUAL' | 'PHONE' | 'WEB' | 'TELEGRAM' | 'VK' | 'WHATSAPP';
+      price?: number;
+      durationOverride?: number;
     };
 
     if (recaptchaToken) {
@@ -264,7 +268,14 @@ export async function bookPublicSlot(req: Request, res: Response) {
     }
 
     const start = startAt;
-    const end = addMinutesToUTC(start, service.durationMin);
+    // Используем кастомную длительность, если указана, иначе длительность услуги
+    const duration =
+      durationOverride && durationOverride > 0
+        ? durationOverride
+        : service.durationMin;
+    const end = addMinutesToUTC(start, duration);
+    // Используем кастомную цену, если указана, иначе цену услуги
+    const finalPrice = price && price > 0 ? price : Number(service.price);
 
     // Используем транзакцию для защиты от double-booking
     const appointment = await prisma.$transaction(async tx => {
@@ -349,7 +360,7 @@ export async function bookPublicSlot(req: Request, res: Response) {
           endAt: end,
           status: 'CONFIRMED',
           notes: comment,
-          price: service.price,
+          price: finalPrice,
           source: source || 'WEB', // По умолчанию WEB, но можно передать MANUAL для записей из ЛК
         },
         select: {
@@ -379,7 +390,7 @@ export async function bookPublicSlot(req: Request, res: Response) {
           serviceName: service.name,
           startAt: appointment.startAt.toISOString(),
           endAt: appointment.endAt.toISOString(),
-          price: Number(service.price),
+          price: finalPrice,
         };
 
         const notificationPromise = notificationQueue.add(
