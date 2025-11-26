@@ -1114,3 +1114,143 @@ export async function getAnalytics(req: Request, res: Response) {
     });
   }
 }
+
+/**
+ * Получить портфолио мастера
+ */
+export async function getPortfolio(req: Request, res: Response) {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const photos = await prisma.portfolioPhoto.findMany({
+      where: { masterId: userId },
+      orderBy: { createdAt: 'desc' },
+      select: {
+        id: true,
+        url: true,
+        description: true,
+        createdAt: true,
+      },
+    });
+
+    return res.json({
+      photos: photos.map(photo => ({
+        ...photo,
+        createdAt: photo.createdAt.toISOString(),
+      })),
+    });
+  } catch (error) {
+    logError('Ошибка получения портфолио', error);
+    return res.status(500).json({
+      error: 'Failed to fetch portfolio',
+      message: error instanceof Error ? error.message : 'Unknown error',
+    });
+  }
+}
+
+/**
+ * Загрузить фото в портфолио
+ */
+export async function uploadPortfolioPhoto(req: Request, res: Response) {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    if (!req.file) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+
+    const description = req.body.description || null;
+
+    const imageUrl = await uploadImageToCloudinary(
+      req.file.buffer,
+      `beauty-crm/portfolio/${userId}`
+    );
+
+    const photo = await prisma.portfolioPhoto.create({
+      data: {
+        masterId: userId,
+        url: imageUrl,
+        description: description || null,
+      },
+      select: {
+        id: true,
+        url: true,
+        description: true,
+        createdAt: true,
+      },
+    });
+
+    return res.status(201).json({
+      photo: {
+        ...photo,
+        createdAt: photo.createdAt.toISOString(),
+      },
+    });
+  } catch (error) {
+    logError('Ошибка загрузки фото портфолио', error);
+    return res.status(500).json({
+      error: 'Failed to upload portfolio photo',
+      message: error instanceof Error ? error.message : 'Unknown error',
+    });
+  }
+}
+
+/**
+ * Удалить фото из портфолио
+ */
+export async function deletePortfolioPhoto(req: Request, res: Response) {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const { id: photoId } = req.params;
+    if (!photoId) {
+      return res.status(400).json({ error: 'Photo ID is required' });
+    }
+
+    const photo = await prisma.portfolioPhoto.findUnique({
+      where: { id: photoId },
+      select: {
+        id: true,
+        masterId: true,
+        url: true,
+      },
+    });
+
+    if (!photo) {
+      return res.status(404).json({ error: 'Photo not found' });
+    }
+
+    if (photo.masterId !== userId) {
+      return res.status(403).json({
+        error: 'Photo does not belong to the current user',
+      });
+    }
+
+    try {
+      await deleteImageFromCloudinary(photo.url);
+    } catch (error) {
+      logError('Ошибка удаления фото из Cloudinary', error);
+    }
+
+    await prisma.portfolioPhoto.delete({
+      where: { id: photoId },
+    });
+
+    return res.status(204).send();
+  } catch (error) {
+    logError('Ошибка удаления фото портфолио', error);
+    return res.status(500).json({
+      error: 'Failed to delete portfolio photo',
+      message: error instanceof Error ? error.message : 'Unknown error',
+    });
+  }
+}

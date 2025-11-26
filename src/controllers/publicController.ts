@@ -107,38 +107,20 @@ export async function getPublicProfileBySlug(req: Request, res: Response) {
       });
     }
 
-    // Получаем примеры работ (фото из завершенных записей)
-    // Сначала получаем завершенные записи мастера
-    const completedAppointments = await prisma.appointment.findMany({
+    // Получаем примеры работ из портфолио мастера
+    const portfolioPhotos = await prisma.portfolioPhoto.findMany({
       where: {
         masterId: user.id,
-        status: 'COMPLETED',
       },
       select: {
-        clientId: true,
+        id: true,
+        url: true,
+        description: true,
+        createdAt: true,
       },
-      distinct: ['clientId'],
+      orderBy: { createdAt: 'desc' },
+      take: 20, // Ограничиваем до 20 последних фото
     });
-
-    const clientIds = completedAppointments.map(apt => apt.clientId);
-
-    // Получаем фото клиентов из завершенных записей
-    const portfolioPhotos =
-      clientIds.length > 0
-        ? await prisma.photo.findMany({
-            where: {
-              clientId: { in: clientIds },
-            },
-            select: {
-              id: true,
-              url: true,
-              description: true,
-              createdAt: true,
-            },
-            orderBy: { createdAt: 'desc' },
-            take: 20, // Ограничиваем до 20 последних фото
-          })
-        : [];
 
     const response = PublicProfileResponseSchema.parse({
       slug: user.slug,

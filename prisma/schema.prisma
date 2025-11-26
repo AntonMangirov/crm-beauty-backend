@@ -36,6 +36,7 @@ model User {
   appointments  Appointment[]
   integrations  Integration[]
   reviews       Review[]
+  portfolioPhotos PortfolioPhoto[]
 
   @@index([email])
   @@index([slug])
@@ -173,6 +174,20 @@ model Review {
   authorName String
   rating    Int      // Оценка от 1 до 5
   text      String   @db.Text
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  master    User     @relation(fields: [masterId], references: [id], onDelete: Cascade)
+
+  @@index([masterId])
+  @@index([createdAt])
+}
+
+model PortfolioPhoto {
+  id        String   @id @default(cuid())
+  masterId  String
+  url       String
+  description String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

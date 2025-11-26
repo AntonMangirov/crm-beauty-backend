@@ -11,6 +11,9 @@ import {
   uploadAppointmentPhotos,
   deleteAppointmentPhoto,
   getAnalytics,
+  getPortfolio,
+  uploadPortfolioPhoto,
+  deletePortfolioPhoto,
 } from '../controllers/meController';
 import {
   getServices,
@@ -74,5 +77,14 @@ router.delete('/services/:id', deleteService);
 
 // GET /api/me/analytics - получить аналитику за текущий месяц
 router.get('/analytics', getAnalytics);
+
+// GET /api/me/portfolio - получить портфолио мастера
+router.get('/portfolio', getPortfolio);
+
+// POST /api/me/portfolio/photos - загрузить фото в портфолио
+router.post('/portfolio/photos', upload.single('photo'), uploadPortfolioPhoto);
+
+// DELETE /api/me/portfolio/photos/:id - удалить фото из портфолио
+router.delete('/portfolio/photos/:id', deletePortfolioPhoto);
 
 export default router;
