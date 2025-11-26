@@ -170,3 +170,48 @@ export function logInfo(
     console.log(`[INFO] ${message}`, context);
   }
 }
+
+/**
+ * Логирует ошибку для разработчиков (dev analytics)
+ * Отправляет ошибки в отдельный файл для анализа разработчиками
+ */
+export function logDevError(
+  errorCode: string,
+  message: string,
+  error?: Error | unknown,
+  context?: Record<string, unknown>
+): void {
+  const entry: LogEntry = {
+    timestamp: new Date().toISOString(),
+    level: 'error',
+    message: `[DEV_ANALYTICS] ${message}`,
+    context: {
+      ...context,
+      errorCode,
+      isDevAnalytics: true,
+    },
+  };
+
+  if (error instanceof Error) {
+    entry.error = {
+      message: error.message,
+      stack: error.stack,
+      code: (error as { code?: string }).code,
+    };
+  } else if (error) {
+    entry.error = {
+      message: String(error),
+    };
+  }
+
+  // Логируем в отдельный файл для разработчиков
+  writeLog('dev-analytics.log', entry);
+
+  // Также логируем в общий error.log
+  writeLog('error.log', entry);
+
+  // Выводим в консоль для разработки
+  if (process.env.NODE_ENV === 'development') {
+    console.error(`[DEV_ANALYTICS] [${errorCode}] ${message}`, error, context);
+  }
+}

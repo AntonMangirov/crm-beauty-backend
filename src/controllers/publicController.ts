@@ -22,7 +22,8 @@ import { TimeslotsResponseSchema } from '../schemas/public';
 import { geocodeAndCache } from '../utils/geocoding';
 import { verifyCaptcha } from '../utils/recaptcha';
 import { normalizePhone } from '../utils/validation';
-import { logError } from '../utils/logger';
+import { logError, logDevError } from '../utils/logger';
+import { trackManualBooking } from '../utils/metrics';
 
 export async function getPublicProfileBySlug(req: Request, res: Response) {
   try {
@@ -228,6 +229,18 @@ export async function bookPublicSlot(req: Request, res: Response) {
     if (phone && phone.trim()) {
       const normalized = normalizePhone(phone);
       if (!normalized) {
+        // Логируем ошибку валидации для разработчиков
+        logDevError(
+          'validationFailed',
+          'Invalid phone format when booking appointment',
+          undefined,
+          {
+            slug,
+            phone: phone.trim(),
+            source,
+          }
+        );
+
         return res.status(400).json({
           error: 'Invalid phone format',
           message: 'Неверный формат телефона',
@@ -238,6 +251,19 @@ export async function bookPublicSlot(req: Request, res: Response) {
 
     // Проверяем, что хотя бы одно поле заполнено
     if (!normalizedPhone && (!telegramUsername || !telegramUsername.trim())) {
+      // Логируем ошибку валидации для разработчиков
+      logDevError(
+        'validationFailed',
+        'Missing contact information when booking appointment',
+        undefined,
+        {
+          slug,
+          hasPhone: !!phone,
+          hasTelegram: !!telegramUsername,
+          source,
+        }
+      );
+
       return res.status(400).json({
         error: 'Phone or telegram username required',
         message: 'Необходимо указать телефон или ник Telegram',
@@ -260,6 +286,19 @@ export async function bookPublicSlot(req: Request, res: Response) {
       },
     });
     if (!service) {
+      // Логируем ошибку для разработчиков
+      logDevError(
+        'noServices',
+        'Service not found when booking appointment',
+        undefined,
+        {
+          slug,
+          serviceId,
+          masterId: master.id,
+          source,
+        }
+      );
+
       return res.status(400).json({
         error: 'Service not found',
         message:
@@ -373,6 +412,18 @@ export async function bookPublicSlot(req: Request, res: Response) {
         },
       });
 
+      // Отслеживаем метрику создания ручной записи
+      if (source === 'MANUAL') {
+        trackManualBooking({
+          masterId: master.id,
+          serviceId: service.id,
+          appointmentId: appointment.id,
+          hasCustomPrice: price !== undefined && price > 0,
+          hasCustomDuration:
+            durationOverride !== undefined && durationOverride > 0,
+        });
+      }
+
       return appointment;
     });
 
@@ -468,6 +519,19 @@ export async function bookPublicSlot(req: Request, res: Response) {
     }
 
     if (error instanceof TimeSlotConflictError) {
+      // Логируем ошибку для разработчиков
+      logDevError(
+        'invalidTimeslot',
+        'Time slot conflict when booking appointment',
+        error,
+        {
+          slug,
+          serviceId: req.body.serviceId,
+          startAt: req.body.startAt,
+          source: req.body.source,
+        }
+      );
+
       return res.status(409).json({
         error: 'Time slot conflict',
         message: 'Выбранное время уже занято',
