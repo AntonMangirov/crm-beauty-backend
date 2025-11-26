@@ -107,6 +107,39 @@ export async function getPublicProfileBySlug(req: Request, res: Response) {
       });
     }
 
+    // Получаем примеры работ (фото из завершенных записей)
+    // Сначала получаем завершенные записи мастера
+    const completedAppointments = await prisma.appointment.findMany({
+      where: {
+        masterId: user.id,
+        status: 'COMPLETED',
+      },
+      select: {
+        clientId: true,
+      },
+      distinct: ['clientId'],
+    });
+
+    const clientIds = completedAppointments.map(apt => apt.clientId);
+
+    // Получаем фото клиентов из завершенных записей
+    const portfolioPhotos =
+      clientIds.length > 0
+        ? await prisma.photo.findMany({
+            where: {
+              clientId: { in: clientIds },
+            },
+            select: {
+              id: true,
+              url: true,
+              description: true,
+              createdAt: true,
+            },
+            orderBy: { createdAt: 'desc' },
+            take: 20, // Ограничиваем до 20 последних фото
+          })
+        : [];
+
     const response = PublicProfileResponseSchema.parse({
       slug: user.slug,
       name: user.name,
@@ -131,6 +164,15 @@ export async function getPublicProfileBySlug(req: Request, res: Response) {
         durationMin: service.durationMin,
         photoUrl: (service as { photoUrl?: string | null }).photoUrl || null,
       })),
+      portfolio:
+        portfolioPhotos.length > 0
+          ? portfolioPhotos.map(photo => ({
+              id: photo.id,
+              url: photo.url,
+              description: photo.description,
+              createdAt: photo.createdAt.toISOString(),
+            }))
+          : undefined,
     });
     return res.json(response);
   } catch (error) {

@@ -32,6 +32,13 @@ export const ServiceSchema = z.object({
   photoUrl: urlOrLocalPath.nullable().optional(),
 });
 
+export const PortfolioPhotoSchema = z.object({
+  id: z.string(),
+  url: urlOrLocalPath,
+  description: z.string().nullable().optional(),
+  createdAt: z.string(),
+});
+
 export const PublicProfileResponseSchema = z.object({
   slug: z.string(),
   name: z.string(),
@@ -47,6 +54,7 @@ export const PublicProfileResponseSchema = z.object({
   backgroundImageUrl: urlOrLocalPath.nullable().optional(),
   rating: z.number().min(0).max(5).nullable().optional(),
   services: z.array(ServiceSchema),
+  portfolio: z.array(PortfolioPhotoSchema).optional(),
 });
 export type PublicProfileResponse = z.infer<typeof PublicProfileResponseSchema>;
 
