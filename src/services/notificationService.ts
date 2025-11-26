@@ -6,6 +6,10 @@ export class NotificationService {
    * Отправка SMS уведомления
    */
   static async sendSMS(data: NotificationData): Promise<boolean> {
+    // Если нет телефона, пропускаем отправку SMS
+    if (!data.clientPhone) {
+      return false;
+    }
     try {
       // Здесь будет интеграция с SMS провайдером (Twilio, SMS.ru и т.д.)
       await new Promise(resolve => global.setTimeout(resolve, 500));

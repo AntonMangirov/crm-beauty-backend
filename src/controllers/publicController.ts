@@ -181,15 +181,23 @@ export async function bookPublicSlot(req: Request, res: Response) {
       throw new MasterInactiveError(slug);
     }
 
-    const { name, phone, serviceId, startAt, comment, recaptchaToken } =
-      req.body as {
-        name: string;
-        phone: string;
-        serviceId: string;
-        startAt: Date;
-        comment?: string;
-        recaptchaToken?: string;
-      };
+    const {
+      name,
+      phone,
+      telegramUsername,
+      serviceId,
+      startAt,
+      comment,
+      recaptchaToken,
+    } = req.body as {
+      name: string;
+      phone?: string;
+      telegramUsername?: string;
+      serviceId: string;
+      startAt: Date;
+      comment?: string;
+      recaptchaToken?: string;
+    };
 
     if (recaptchaToken) {
       const isCaptchaValid = await verifyCaptcha(recaptchaToken);
@@ -209,13 +217,31 @@ export async function bookPublicSlot(req: Request, res: Response) {
       }
     }
 
-    const normalizedPhone = normalizePhone(phone);
-    if (!normalizedPhone) {
+    // Нормализуем телефон, если он передан
+    let normalizedPhone: string | undefined = undefined;
+    if (phone && phone.trim()) {
+      const normalized = normalizePhone(phone);
+      if (!normalized) {
+        return res.status(400).json({
+          error: 'Invalid phone format',
+          message: 'Неверный формат телефона',
+        });
+      }
+      normalizedPhone = normalized;
+    }
+
+    // Проверяем, что хотя бы одно поле заполнено
+    if (!normalizedPhone && (!telegramUsername || !telegramUsername.trim())) {
       return res.status(400).json({
-        error: 'Invalid phone format',
-        message: 'Неверный формат телефона',
+        error: 'Phone or telegram username required',
+        message: 'Необходимо указать телефон или ник Telegram',
       });
     }
+
+    // Нормализуем telegramUsername (убираем @ если есть, приводим к нижнему регистру)
+    const normalizedTelegramUsername = telegramUsername?.trim()
+      ? telegramUsername.trim().replace(/^@/, '').toLowerCase()
+      : undefined;
 
     const service = await prisma.service.findFirst({
       where: { id: serviceId, masterId: master.id, isActive: true },
@@ -240,20 +266,60 @@ export async function bookPublicSlot(req: Request, res: Response) {
 
     // Используем транзакцию для защиты от double-booking
     const appointment = await prisma.$transaction(async tx => {
+      // Ищем клиента по телефону или telegramUsername
+      const whereConditions: Array<
+        { phone: string } | { telegramUsername: string }
+      > = [];
+      if (normalizedPhone) {
+        whereConditions.push({ phone: normalizedPhone });
+      }
+      if (normalizedTelegramUsername) {
+        whereConditions.push({ telegramUsername: normalizedTelegramUsername });
+      }
+
+      // Должно быть хотя бы одно условие для поиска (проверено выше, но на всякий случай)
+      if (whereConditions.length === 0) {
+        throw new Error('Phone or telegram username required');
+      }
+
       let client = await tx.client.findFirst({
-        where: { masterId: master.id, phone: normalizedPhone },
+        where: {
+          masterId: master.id,
+          OR: whereConditions,
+        },
       });
+
       if (!client) {
+        // Создаем нового клиента
         client = await tx.client.create({
           data: {
             masterId: master.id,
             name,
             phone: normalizedPhone,
+            telegramUsername: normalizedTelegramUsername,
           },
         });
       } else {
+        // Обновляем существующего клиента
+        const updateData: {
+          name?: string;
+          phone?: string;
+          telegramUsername?: string;
+        } = {};
         if (!client.name && name) {
-          await tx.client.update({ where: { id: client.id }, data: { name } });
+          updateData.name = name;
+        }
+        if (normalizedPhone && !client.phone) {
+          updateData.phone = normalizedPhone;
+        }
+        if (normalizedTelegramUsername && !client.telegramUsername) {
+          updateData.telegramUsername = normalizedTelegramUsername;
+        }
+        if (Object.keys(updateData).length > 0) {
+          await tx.client.update({
+            where: { id: client.id },
+            data: updateData,
+          });
         }
       }
 
@@ -302,7 +368,10 @@ export async function bookPublicSlot(req: Request, res: Response) {
         const notificationData: NotificationData = {
           appointmentId: appointment.id,
           clientName: name,
-          clientPhone: phone,
+          ...(normalizedPhone && { clientPhone: normalizedPhone }),
+          ...(normalizedTelegramUsername && {
+            clientTelegramUsername: normalizedTelegramUsername,
+          }),
           masterName: master.name,
           serviceName: service.name,
           startAt: appointment.startAt.toISOString(),

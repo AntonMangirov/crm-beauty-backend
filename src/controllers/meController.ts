@@ -298,6 +298,7 @@ export async function getAppointments(req: Request, res: Response) {
             id: true,
             name: true,
             phone: true,
+            telegramUsername: true,
             email: true,
           },
         },
@@ -545,6 +546,7 @@ export async function updateAppointmentStatus(req: Request, res: Response) {
             id: true,
             name: true,
             phone: true,
+            telegramUsername: true,
             email: true,
           },
         },
@@ -627,6 +629,7 @@ export async function getClients(req: Request, res: Response) {
         id: true,
         name: true,
         phone: true,
+        telegramUsername: true,
         appointments: {
           where: {
             masterId: userId,
@@ -659,6 +662,7 @@ export async function getClients(req: Request, res: Response) {
         id: client.id,
         name: client.name,
         phone: client.phone,
+        telegramUsername: client.telegramUsername,
         lastVisit,
         visitsCount,
         photosCount,

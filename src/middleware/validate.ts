@@ -17,7 +17,23 @@ export function validate(schemas: Schemas) {
           sanitizedBody.startAt = sanitizedBody.startAt.toISOString();
         }
 
+        // Временное логирование для отладки
+        if (req.path.includes('/book')) {
+          console.log(
+            '[DEBUG] Request body before validation:',
+            JSON.stringify(sanitizedBody, null, 2)
+          );
+        }
+
         (req as any).body = schemas.body.parse(sanitizedBody);
+
+        // Временное логирование для отладки
+        if (req.path.includes('/book')) {
+          console.log(
+            '[DEBUG] Request body after validation:',
+            JSON.stringify((req as any).body, null, 2)
+          );
+        }
       } else {
         if (schemas.params) {
           (req as any).params = schemas.params.parse(req.params);

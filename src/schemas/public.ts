@@ -64,10 +64,8 @@ export type SlugParams = z.infer<typeof SlugParamSchema>;
 export const BookingRequestSchema = z
   .object({
     name: z.string().min(1, 'Имя обязательно').max(100, 'Имя слишком длинное'),
-    phone: z.string().min(1, 'Телефон обязателен').refine(isValidPhoneFormat, {
-      message:
-        'Неверный формат телефона. Используйте формат: +7 (999) 123-45-67',
-    }),
+    phone: z.string().optional(),
+    telegramUsername: z.string().optional(),
     serviceId: z.string().min(1, 'ID услуги обязателен'),
     startAt: z
       .string()
@@ -100,6 +98,63 @@ export const BookingRequestSchema = z
     {
       message: 'Дата записи не может быть в прошлом',
       path: ['startAt'],
+    }
+  )
+  .refine(
+    data => {
+      // Нормализуем phone: пустые строки считаем как отсутствие поля
+      const normalizedPhone = data.phone?.trim() || undefined;
+      if (normalizedPhone && !isValidPhoneFormat(normalizedPhone)) {
+        return false;
+      }
+      return true;
+    },
+    {
+      message:
+        'Неверный формат телефона. Используйте формат: +7 (999) 123-45-67',
+      path: ['phone'],
+    }
+  )
+  .refine(
+    data => {
+      // Нормализуем telegramUsername: пустые строки считаем как отсутствие поля
+      const normalizedTelegram = data.telegramUsername?.trim() || undefined;
+      if (normalizedTelegram) {
+        if (normalizedTelegram.length < 5) {
+          return false;
+        }
+        if (normalizedTelegram.length > 32) {
+          return false;
+        }
+        if (!/^[a-zA-Z0-9_]{5,32}$/.test(normalizedTelegram)) {
+          return false;
+        }
+      }
+      return true;
+    },
+    {
+      message:
+        'Ник Telegram должен содержать 5-32 символа (только буквы, цифры и подчеркивания)',
+      path: ['telegramUsername'],
+    }
+  )
+  .refine(
+    data => {
+      // Хотя бы одно из полей (phone или telegramUsername) должно быть заполнено
+      const normalizedPhone = data.phone?.trim() || undefined;
+      const normalizedTelegram = data.telegramUsername?.trim() || undefined;
+
+      const hasPhone = normalizedPhone && isValidPhoneFormat(normalizedPhone);
+      const hasTelegram =
+        normalizedTelegram &&
+        normalizedTelegram.length >= 5 &&
+        /^[a-zA-Z0-9_]{5,32}$/.test(normalizedTelegram);
+
+      return hasPhone || hasTelegram;
+    },
+    {
+      message: 'Необходимо указать телефон или ник Telegram',
+      path: ['phone'], // Привязываем к phone, но сообщение указывает на оба поля
     }
   );
 export type BookingRequest = z.infer<typeof BookingRequestSchema>;

@@ -126,6 +126,7 @@ export const ClientListItemSchema = z.object({
   id: z.string(),
   name: z.string(),
   phone: z.string().nullable(),
+  telegramUsername: z.string().nullable(),
   lastVisit: z.date().nullable(), // Дата последнего завершенного посещения
   visitsCount: z.number(), // Количество завершенных посещений
   photosCount: z.number(), // Количество фото у клиента

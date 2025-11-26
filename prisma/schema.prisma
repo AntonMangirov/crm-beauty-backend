@@ -63,16 +63,17 @@ model Service {
 }
 
 model Client {
-  id          String      @id @default(cuid())
-  masterId    String
-  name        String
-  phone       String?
-  email       String?
-  allergies   String?
-  notes       String?
-  isActive    Boolean     @default(true)
-  createdAt   DateTime    @default(now())
-  updatedAt   DateTime    @updatedAt
+  id              String      @id @default(cuid())
+  masterId        String
+  name            String
+  phone           String?
+  telegramUsername String?
+  email           String?
+  allergies       String?
+  notes           String?
+  isActive        Boolean     @default(true)
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
 
   master      User        @relation(fields: [masterId], references: [id], onDelete: Cascade)
   appointments Appointment[]
@@ -80,6 +81,7 @@ model Client {
 
   @@index([masterId])
   @@index([phone])
+  @@index([telegramUsername])
   @@index([email])
   @@index([isActive])
 }
