@@ -114,3 +114,32 @@ export const TimeslotsResponseSchema = z.object({
   available: z.array(z.string()), // ISO datetime strings
 });
 export type TimeslotsResponse = z.infer<typeof TimeslotsResponseSchema>;
+
+export const CreateReviewRequestSchema = z.object({
+  authorName: z
+    .string()
+    .min(1, 'Имя автора обязательно')
+    .max(100, 'Имя слишком длинное'),
+  rating: z
+    .number()
+    .int()
+    .min(1, 'Оценка должна быть от 1 до 5')
+    .max(5, 'Оценка должна быть от 1 до 5'),
+  text: z
+    .string()
+    .min(10, 'Отзыв должен содержать минимум 10 символов')
+    .max(1000, 'Отзыв не должен превышать 1000 символов'),
+});
+export type CreateReviewRequest = z.infer<typeof CreateReviewRequestSchema>;
+
+export const ReviewSchema = z.object({
+  id: z.string(),
+  authorName: z.string(),
+  rating: z.number().int().min(1).max(5),
+  text: z.string(),
+  createdAt: z.string(),
+});
+export type Review = z.infer<typeof ReviewSchema>;
+
+export const ReviewsResponseSchema = z.array(ReviewSchema);
+export type ReviewsResponse = z.infer<typeof ReviewsResponseSchema>;

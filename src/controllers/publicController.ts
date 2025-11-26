@@ -3,6 +3,9 @@ import prisma from '../prismaClient';
 import {
   BookingResponseSchema,
   PublicProfileResponseSchema,
+  CreateReviewRequestSchema,
+  ReviewsResponseSchema,
+  ReviewSchema,
 } from '../schemas/public';
 import {
   notificationQueue,
@@ -532,6 +535,175 @@ export async function getTimeslots(req: Request, res: Response) {
       return res.status(404).json({
         error: 'Master inactive',
         message: `Мастер '${slugParam}' неактивен`,
+      });
+    }
+
+    return res.status(500).json({
+      error: 'Internal server error',
+      message: 'Внутренняя ошибка сервера',
+    });
+  }
+}
+
+export async function getReviewsBySlug(req: Request, res: Response) {
+  try {
+    const { slug } = req.params;
+    if (!slug) {
+      return res.status(400).json({ error: 'slug is required' });
+    }
+
+    const master = await prisma.user.findUnique({
+      where: { slug },
+      select: { id: true, isActive: true },
+    });
+
+    if (!master) {
+      throw new MasterNotFoundError(slug);
+    }
+
+    if (!master.isActive) {
+      throw new MasterInactiveError(slug);
+    }
+
+    const reviews = await prisma.review.findMany({
+      where: { masterId: master.id },
+      orderBy: { createdAt: 'desc' },
+      select: {
+        id: true,
+        authorName: true,
+        rating: true,
+        text: true,
+        createdAt: true,
+      },
+    });
+
+    const response = ReviewsResponseSchema.parse(
+      reviews.map(review => ({
+        ...review,
+        rating: Number(review.rating),
+        createdAt: review.createdAt.toISOString(),
+      }))
+    );
+
+    return res.json(response);
+  } catch (error) {
+    logError('Ошибка получения отзывов', error, {
+      slug: req.params.slug,
+    });
+
+    const { slug: slugParam } = req.params;
+
+    if (error instanceof MasterNotFoundError) {
+      return res.status(404).json({
+        error: 'Master not found',
+        message: `Мастер с slug '${slugParam}' не найден`,
+      });
+    }
+
+    if (error instanceof MasterInactiveError) {
+      return res.status(404).json({
+        error: 'Master inactive',
+        message: `Мастер '${slugParam}' неактивен`,
+      });
+    }
+
+    return res.status(500).json({
+      error: 'Internal server error',
+      message: 'Внутренняя ошибка сервера',
+    });
+  }
+}
+
+export async function createReview(req: Request, res: Response) {
+  try {
+    const { slug } = req.params;
+    if (!slug) {
+      return res.status(400).json({ error: 'slug is required' });
+    }
+
+    const master = await prisma.user.findUnique({
+      where: { slug },
+      select: { id: true, isActive: true },
+    });
+
+    if (!master) {
+      throw new MasterNotFoundError(slug);
+    }
+
+    if (!master.isActive) {
+      throw new MasterInactiveError(slug);
+    }
+
+    const validatedData = CreateReviewRequestSchema.parse(req.body);
+
+    // Создаем отзыв
+    const review = await prisma.review.create({
+      data: {
+        masterId: master.id,
+        authorName: validatedData.authorName,
+        rating: validatedData.rating,
+        text: validatedData.text,
+      },
+      select: {
+        id: true,
+        authorName: true,
+        rating: true,
+        text: true,
+        createdAt: true,
+      },
+    });
+
+    // Пересчитываем средний рейтинг мастера
+    const reviews = await prisma.review.findMany({
+      where: { masterId: master.id },
+      select: { rating: true },
+    });
+
+    if (reviews.length > 0) {
+      const avgRating =
+        reviews.reduce((sum, r) => sum + Number(r.rating), 0) / reviews.length;
+      await prisma.user.update({
+        where: { id: master.id },
+        data: {
+          rating: avgRating.toFixed(2),
+        },
+      });
+    }
+
+    const response = ReviewSchema.parse({
+      ...review,
+      rating: Number(review.rating),
+      createdAt: review.createdAt.toISOString(),
+    });
+
+    return res.status(201).json(response);
+  } catch (error) {
+    logError('Ошибка создания отзыва', error, {
+      slug: req.params.slug,
+      body: req.body,
+    });
+
+    const { slug: slugParam } = req.params;
+
+    if (error instanceof MasterNotFoundError) {
+      return res.status(404).json({
+        error: 'Master not found',
+        message: `Мастер с slug '${slugParam}' не найден`,
+      });
+    }
+
+    if (error instanceof MasterInactiveError) {
+      return res.status(404).json({
+        error: 'Master inactive',
+        message: `Мастер '${slugParam}' неактивен`,
+      });
+    }
+
+    if (error instanceof Error && error.name === 'ZodError') {
+      return res.status(400).json({
+        error: 'Validation error',
+        message: 'Ошибка валидации данных',
+        details: error.message,
       });
     }
 
