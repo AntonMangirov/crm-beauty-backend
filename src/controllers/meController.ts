@@ -725,6 +725,150 @@ export async function getClients(req: Request, res: Response) {
 }
 
 /**
+ * Получить последние ручные записи мастера (source = MANUAL или PHONE)
+ * Возвращает последние 1-3 записи для быстрого повтора услуги
+ */
+export async function getLastManualAppointments(req: Request, res: Response) {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const limit = parseInt(req.query.limit as string) || 3;
+    const maxLimit = Math.min(limit, 10); // Максимум 10 записей
+
+    const appointments = await prisma.appointment.findMany({
+      where: {
+        masterId: userId,
+        source: {
+          in: ['MANUAL', 'PHONE'],
+        },
+      },
+      include: {
+        service: {
+          select: {
+            id: true,
+            name: true,
+            price: true,
+            durationMin: true,
+          },
+        },
+      },
+      orderBy: {
+        createdAt: 'desc',
+      },
+      take: maxLimit,
+    });
+
+    const response = appointments.map(apt => ({
+      id: apt.id,
+      serviceId: apt.serviceId,
+      service: {
+        id: apt.service.id,
+        name: apt.service.name,
+        price: Number(apt.service.price),
+        durationMin: apt.service.durationMin,
+      },
+      createdAt: apt.createdAt,
+    }));
+
+    return res.json(response);
+  } catch (error) {
+    logError('Ошибка получения последних ручных записей', error);
+    return res.status(500).json({
+      error: 'Failed to fetch last manual appointments',
+      message: error instanceof Error ? error.message : 'Unknown error',
+    });
+  }
+}
+
+/**
+ * Получить топ-5 наиболее используемых услуг мастера
+ * На основе статистики записей за последние 90 дней
+ */
+export async function getTopServices(req: Request, res: Response) {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const days = parseInt(req.query.days as string) || 90;
+    const limit = parseInt(req.query.limit as string) || 5;
+    const maxLimit = Math.min(limit, 10);
+
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - days);
+
+    // Получаем статистику использования услуг
+    const serviceStats = await prisma.appointment.groupBy({
+      by: ['serviceId'],
+      where: {
+        masterId: userId,
+        createdAt: {
+          gte: startDate,
+        },
+        status: {
+          notIn: ['CANCELED', 'NO_SHOW'],
+        },
+      },
+      _count: {
+        id: true,
+      },
+      orderBy: {
+        _count: {
+          id: 'desc',
+        },
+      },
+      take: maxLimit,
+    });
+
+    // Получаем информацию об услугах
+    const serviceIds = serviceStats.map(stat => stat.serviceId);
+    const services = await prisma.service.findMany({
+      where: {
+        id: { in: serviceIds },
+        masterId: userId,
+        isActive: true,
+      },
+      select: {
+        id: true,
+        name: true,
+        price: true,
+        durationMin: true,
+      },
+    });
+
+    // Создаем мапу для быстрого доступа
+    const servicesMap = new Map(services.map(s => [s.id, s]));
+
+    // Формируем ответ с количеством использований
+    const response = serviceStats
+      .map(stat => {
+        const service = servicesMap.get(stat.serviceId);
+        if (!service) return null;
+        return {
+          id: service.id,
+          name: service.name,
+          price: Number(service.price),
+          durationMin: service.durationMin,
+          usageCount: stat._count.id,
+        };
+      })
+      .filter((item): item is NonNullable<typeof item> => item !== null);
+
+    return res.json(response);
+  } catch (error) {
+    logError('Ошибка получения топ услуг', error);
+    return res.status(500).json({
+      error: 'Failed to fetch top services',
+      message: error instanceof Error ? error.message : 'Unknown error',
+    });
+  }
+}
+
+/**
  * Получить историю посещений клиента
  */
 export async function getClientHistory(req: Request, res: Response) {

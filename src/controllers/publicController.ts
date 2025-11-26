@@ -189,6 +189,7 @@ export async function bookPublicSlot(req: Request, res: Response) {
       startAt,
       comment,
       recaptchaToken,
+      source,
     } = req.body as {
       name: string;
       phone?: string;
@@ -197,6 +198,7 @@ export async function bookPublicSlot(req: Request, res: Response) {
       startAt: Date;
       comment?: string;
       recaptchaToken?: string;
+      source?: 'MANUAL' | 'PHONE' | 'WEB' | 'TELEGRAM' | 'VK' | 'WHATSAPP';
     };
 
     if (recaptchaToken) {
@@ -348,6 +350,7 @@ export async function bookPublicSlot(req: Request, res: Response) {
           status: 'CONFIRMED',
           notes: comment,
           price: service.price,
+          source: source || 'WEB', // По умолчанию WEB, но можно передать MANUAL для записей из ЛК
         },
         select: {
           id: true,

@@ -14,6 +14,8 @@ import {
   getPortfolio,
   uploadPortfolioPhoto,
   deletePortfolioPhoto,
+  getLastManualAppointments,
+  getTopServices,
 } from '../controllers/meController';
 import {
   getServices,
@@ -41,6 +43,9 @@ router.post('/profile/upload-photo', upload.single('photo'), uploadPhoto);
 // GET /api/me/appointments - получить записи мастера с фильтрами
 router.get('/appointments', getAppointments);
 
+// GET /api/me/appointments/last-manual - получить последние ручные записи
+router.get('/appointments/last-manual', getLastManualAppointments);
+
 // PUT /api/me/appointments/:id - обновить статус записи
 router.put('/appointments/:id', updateAppointmentStatus);
 
@@ -62,6 +67,9 @@ router.get('/clients/:id/history', getClientHistory);
 
 // GET /api/me/services - получить все услуги мастера
 router.get('/services', getServices);
+
+// GET /api/me/services/top - получить топ-5 наиболее используемых услуг
+router.get('/services/top', getTopServices);
 
 // POST /api/me/services - создать новую услугу
 router.post('/services', createService);
