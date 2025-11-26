@@ -216,3 +216,5 @@ curl -X POST http://localhost:3000/api/auth/refresh \
 3. Добавьте тест в `protected-endpoints.test.ts`
 4. Обновите этот документ
 
+
+

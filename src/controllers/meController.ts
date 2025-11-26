@@ -351,7 +351,23 @@ export async function getAppointments(req: Request, res: Response) {
         }));
 
       return {
-        ...appointment,
+        id: appointment.id,
+        masterId: appointment.masterId,
+        clientId: appointment.clientId,
+        serviceId: appointment.serviceId,
+        startAt: appointment.startAt,
+        endAt: appointment.endAt,
+        status: appointment.status,
+        source: appointment.source,
+        notes: appointment.notes,
+        price: appointment.price ? Number(appointment.price) : null,
+        createdAt: appointment.createdAt,
+        updatedAt: appointment.updatedAt,
+        client: appointment.client,
+        service: {
+          ...appointment.service,
+          price: Number(appointment.service.price),
+        },
         photos: relatedPhotos,
       };
     });
@@ -544,8 +560,23 @@ export async function updateAppointmentStatus(req: Request, res: Response) {
     });
 
     const response = {
-      ...updatedAppointment,
+      id: updatedAppointment.id,
+      masterId: updatedAppointment.masterId,
+      clientId: updatedAppointment.clientId,
+      serviceId: updatedAppointment.serviceId,
+      startAt: updatedAppointment.startAt,
+      endAt: updatedAppointment.endAt,
+      status: updatedAppointment.status,
+      source: updatedAppointment.source,
+      notes: updatedAppointment.notes,
       price: updatedAppointment.price ? Number(updatedAppointment.price) : null,
+      createdAt: updatedAppointment.createdAt,
+      updatedAt: updatedAppointment.updatedAt,
+      client: updatedAppointment.client,
+      service: {
+        ...updatedAppointment.service,
+        price: Number(updatedAppointment.service.price),
+      },
     };
 
     return res.json(response);
