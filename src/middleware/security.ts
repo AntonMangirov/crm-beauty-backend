@@ -59,9 +59,11 @@ export const generalRateLimit = rateLimit({
 });
 
 // Строгий rate limiter для аутентификации
+// В dev режиме более мягкий лимит для удобства разработки
+const isDevelopment = process.env.NODE_ENV === 'development';
 export const authRateLimit = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 минут
-  max: 5, // максимум 5 попыток входа за 15 минут
+  max: isDevelopment ? 20 : 5, // в dev режиме 20 попыток, в production 5
   message: {
     error: 'Too many authentication attempts',
     code: 'AUTH_RATE_LIMIT_EXCEEDED',

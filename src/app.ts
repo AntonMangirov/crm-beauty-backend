@@ -33,7 +33,6 @@ dotenv.config();
 
 const app = express();
 
-app.use(corsLogger);
 app.use(cookieParser());
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
@@ -44,6 +43,9 @@ const hasCloudinary = !!process.env.CLOUDINARY_CLOUD_NAME;
 if (uploadMode === 'local' || !hasCloudinary) {
   app.use('/uploads', express.static('uploads'));
 }
+
+// CORS должен быть применен ПЕРВЫМ, до всех других middleware
+app.use(corsLogger);
 
 app.use(securityHeaders);
 app.use(requestSizeLimit(10 * 1024 * 1024));
@@ -81,6 +83,7 @@ if (process.env.NODE_ENV === 'test') {
 }
 app.use('/api/services', corsConfig, servicesRouter);
 app.use('/api/me', corsConfig, meRouter);
+// Helmet применяется после CORS, чтобы не блокировать CORS заголовки
 app.use(helmetConfig);
 
 app.get('/api/health', (req, res) => {

@@ -620,11 +620,44 @@ export async function getClients(req: Request, res: Response) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
 
+    // Поддерживаем поиск по имени или телефону через query параметры
+    const { name, phone } = req.query as { name?: string; phone?: string };
+
+    const whereClause: Prisma.ClientWhereInput = {
+      masterId: userId,
+      isActive: true,
+    };
+
+    // Поиск по имени (частичное совпадение, case-insensitive)
+    if (name && name.trim()) {
+      whereClause.name = {
+        contains: name.trim(),
+        mode: 'insensitive',
+      };
+    }
+
+    // Поиск по телефону (нормализуем и ищем точное совпадение или частичное)
+    if (phone && phone.trim()) {
+      const phoneDigits = phone.trim().replace(/[^\d+]/g, '');
+      const telegramSearch = phone.trim().replace(/^@/, '');
+      // Ищем по телефону или telegram username
+      whereClause.OR = [
+        {
+          phone: {
+            contains: phoneDigits,
+          },
+        },
+        {
+          telegramUsername: {
+            contains: telegramSearch,
+            mode: 'insensitive',
+          },
+        },
+      ];
+    }
+
     const clients = await prisma.client.findMany({
-      where: {
-        masterId: userId,
-        isActive: true,
-      },
+      where: whereClause,
       select: {
         id: true,
         name: true,

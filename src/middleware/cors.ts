@@ -67,8 +67,10 @@ export const corsConfig = cors({
 
 export const authCorsConfig = cors({
   origin: (origin, callback) => {
-    // В тестовом окружении разрешаем запросы без origin (supertest)
-    if (process.env.NODE_ENV === 'test' && !origin) {
+    // В тестовом и dev окружении разрешаем запросы без origin
+    const isDevOrTest =
+      process.env.NODE_ENV === 'development' || process.env.NODE_ENV === 'test';
+    if (isDevOrTest && !origin) {
       return callback(null, true);
     }
     if (!origin) {
@@ -77,8 +79,14 @@ export const authCorsConfig = cors({
     return originCheck(origin, callback);
   },
   credentials: true,
-  methods: ['GET', 'POST', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: [
+    'Origin',
+    'X-Requested-With',
+    'Content-Type',
+    'Accept',
+    'Authorization',
+  ],
   maxAge: 300,
   optionsSuccessStatus: 200,
 });
