@@ -28,6 +28,11 @@ model User {
   refreshTokenExpires DateTime?                  // Срок действия refresh token
   isActive      Boolean       @default(true)
   role          UserRole      @default(MASTER)
+  // Новые поля для расписания работы и настроек слотов
+  workSchedule  Json?         // Расписание работы: массив { dayOfWeek: number, intervals: [{ from: string, to: string }] }
+  breaks        Json?         // Перерывы мастера: массив { from: string, to: string, reason?: string }
+  defaultBufferMinutes Int?   @default(15)      // Буфер после услуги по умолчанию (минуты)
+  slotStepMinutes Int?        @default(15)       // Шаг генерации слотов (минуты): 5, 10, 15
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
 
