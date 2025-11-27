@@ -24,6 +24,8 @@ import {
   MasterSettings,
   ExistingBooking,
   ServiceInfo,
+  WorkInterval,
+  Break,
 } from '../utils/slotCalculator';
 import { geocodeAndCache } from '../utils/geocoding';
 import { verifyCaptcha } from '../utils/recaptcha';
@@ -557,7 +559,7 @@ export async function bookPublicSlot(req: Request, res: Response) {
 export async function getTimeslots(req: Request, res: Response) {
   try {
     const { slug } = req.params;
-    const validatedQuery = (req as any).validatedQuery as
+    const validatedQuery = req.validatedQuery as
       | {
           date?: string;
           serviceId?: string;
@@ -578,6 +580,10 @@ export async function getTimeslots(req: Request, res: Response) {
       select: {
         id: true,
         isActive: true,
+        workSchedule: true,
+        breaks: true,
+        defaultBufferMinutes: true,
+        slotStepMinutes: true,
       },
     });
 
@@ -693,18 +699,62 @@ export async function getTimeslots(req: Request, res: Response) {
       })
     );
 
-    // TODO: Получить настройки мастера из базы данных
-    // Пока используем значения по умолчанию
-    // Когда настройки будут добавлены в БД, здесь нужно будет их загрузить
+    // Получаем день недели для целевой даты (0 = воскресенье, 1 = понедельник, ..., 6 = суббота)
+    // targetDate уже определена выше на строке 670
+    const dayOfWeek = targetDate.getUTCDay();
+
+    // Преобразуем workSchedule из JSON в workIntervals для конкретной даты
+    let workIntervals: WorkInterval[] = [];
+    if (master.workSchedule && typeof master.workSchedule === 'object') {
+      // Парсим workSchedule как массив
+      const schedule = master.workSchedule as Array<{
+        dayOfWeek: number;
+        intervals: Array<{ from: string; to: string }>;
+      }>;
+
+      // Ищем расписание для текущего дня недели
+      const daySchedule = schedule.find(s => s.dayOfWeek === dayOfWeek);
+      if (daySchedule && daySchedule.intervals) {
+        workIntervals = daySchedule.intervals.map(interval => ({
+          start: interval.from,
+          end: interval.to,
+        }));
+      }
+    }
+
+    // Если workSchedule = null или не найден для этого дня → используем fallback
+    if (workIntervals.length === 0) {
+      workIntervals = [{ start: '09:00', end: '18:00' }]; // Старая схема рабочего дня
+    }
+
+    // Преобразуем breaks из JSON
+    let breaks: Break[] = [];
+    if (master.breaks && typeof master.breaks === 'object') {
+      const breaksData = master.breaks as Array<{
+        from: string;
+        to: string;
+        reason?: string;
+      }>;
+      breaks = breaksData.map(breakItem => ({
+        start: breakItem.from,
+        end: breakItem.to,
+      }));
+    }
+    // Если breaks = null → пропускаем их (уже пустой массив)
+
+    // Получаем настройки с fallback значениями
+    const serviceBufferMinutes = master.defaultBufferMinutes ?? 15;
+    const slotStepMinutes = master.slotStepMinutes ?? 15;
+    const timezone = req.timezone || 'Europe/Moscow';
+
+    // Формируем настройки мастера для функции
     const masterSettings: MasterSettings = {
-      workIntervals: [
-        { start: '09:00', end: '18:00' }, // По умолчанию 9:00-18:00
-      ],
-      breaks: [], // По умолчанию нет перерывов
-      serviceBufferMinutes: 15, // По умолчанию 15 минут буфера
-      slotStepMinutes: 15, // По умолчанию шаг 15 минут
+      workIntervals,
+      breaks,
+      serviceBufferMinutes,
+      slotStepMinutes,
       minServiceDurationMinutes: minServiceDuration,
-      timezone: (req as any).timezone || 'Europe/Moscow', // Используем часовой пояс из заголовка или по умолчанию
+      timezone,
     };
 
     // Вызываем умный алгоритм генерации слотов

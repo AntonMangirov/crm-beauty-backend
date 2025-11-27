@@ -5,6 +5,7 @@ declare global {
     interface Request {
       user?: { id: string };
       file?: Express.Multer.File;
+      validatedQuery?: unknown;
     }
   }
 }
