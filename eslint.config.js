@@ -25,6 +25,10 @@ export default [
         exports: 'readonly',
         URL: 'readonly',
         Express: 'readonly',
+        setTimeout: 'readonly',
+        clearTimeout: 'readonly',
+        setInterval: 'readonly',
+        clearInterval: 'readonly',
       },
     },
     plugins: {

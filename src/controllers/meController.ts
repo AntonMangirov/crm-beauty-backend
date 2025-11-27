@@ -9,6 +9,12 @@ import {
   ClientHistoryResponseSchema,
   UploadAppointmentPhotosResponseSchema,
   AnalyticsResponseSchema,
+  ChangePasswordSchema,
+  ChangePasswordResponseSchema,
+  ChangeEmailSchema,
+  ChangeEmailResponseSchema,
+  ChangePhoneSchema,
+  ChangePhoneResponseSchema,
 } from '../schemas/me';
 import { Prisma } from '@prisma/client';
 import { geocodeAndCache } from '../utils/geocoding';
@@ -19,6 +25,7 @@ import {
 import { AppointmentNotFoundError } from '../errors/BusinessErrors';
 import { ForbiddenError } from '../errors/AppError';
 import { logError } from '../utils/logger';
+import { hashPassword, verifyPassword } from '../utils/password';
 
 /**
  * Получить полную информацию о текущем мастере со статистикой
@@ -1431,6 +1438,213 @@ export async function deletePortfolioPhoto(req: Request, res: Response) {
     logError('Ошибка удаления фото портфолио', error);
     return res.status(500).json({
       error: 'Failed to delete portfolio photo',
+      message: error instanceof Error ? error.message : 'Unknown error',
+    });
+  }
+}
+
+/**
+ * Изменить пароль мастера
+ */
+export async function changePassword(req: Request, res: Response) {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const currentPassword = req.body.currentPassword;
+    const newPassword = req.body.newPassword;
+
+    // Валидация через схему
+    const validatedData = ChangePasswordSchema.parse({
+      currentPassword,
+      newPassword,
+    });
+
+    // Получаем пользователя с паролем
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { passwordHash: true },
+    });
+
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    // Проверяем текущий пароль
+    const isPasswordValid = await verifyPassword(
+      validatedData.currentPassword,
+      user.passwordHash
+    );
+
+    if (!isPasswordValid) {
+      return res.status(400).json({
+        error: 'Invalid password',
+        message: 'Текущий пароль неверен',
+      });
+    }
+
+    // Хешируем новый пароль
+    const newPasswordHash = await hashPassword(validatedData.newPassword);
+
+    // Обновляем пароль
+    await prisma.user.update({
+      where: { id: userId },
+      data: { passwordHash: newPasswordHash },
+    });
+
+    const response = ChangePasswordResponseSchema.parse({
+      success: true,
+      message: 'Пароль успешно изменен',
+    });
+
+    return res.json(response);
+  } catch (error) {
+    logError('Ошибка изменения пароля', error);
+
+    if (error instanceof Error && error.name === 'ZodError') {
+      return res.status(400).json({
+        error: 'Validation error',
+        message: error.message,
+      });
+    }
+
+    return res.status(500).json({
+      error: 'Failed to change password',
+      message: error instanceof Error ? error.message : 'Unknown error',
+    });
+  }
+}
+
+/**
+ * Изменить email мастера
+ */
+export async function changeEmail(req: Request, res: Response) {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const validatedData = ChangeEmailSchema.parse(req.body);
+
+    // Получаем пользователя с паролем
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { passwordHash: true, email: true },
+    });
+
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    // Проверяем пароль для подтверждения
+    const isPasswordValid = await verifyPassword(
+      validatedData.password,
+      user.passwordHash
+    );
+
+    if (!isPasswordValid) {
+      return res.status(400).json({
+        error: 'Invalid password',
+        message: 'Пароль неверен',
+      });
+    }
+
+    // Проверяем, не занят ли новый email
+    const existingUser = await prisma.user.findUnique({
+      where: { email: validatedData.newEmail },
+    });
+
+    if (existingUser && existingUser.id !== userId) {
+      return res.status(400).json({
+        error: 'Email already exists',
+        message: 'Этот email уже используется другим пользователем',
+      });
+    }
+
+    // Обновляем email
+    await prisma.user.update({
+      where: { id: userId },
+      data: { email: validatedData.newEmail },
+    });
+
+    const response = ChangeEmailResponseSchema.parse({
+      success: true,
+      message: 'Email успешно изменен',
+      email: validatedData.newEmail,
+    });
+
+    return res.json(response);
+  } catch (error) {
+    logError('Ошибка изменения email', error);
+
+    if (error instanceof Error && error.name === 'ZodError') {
+      return res.status(400).json({
+        error: 'Validation error',
+        message: error.message,
+      });
+    }
+
+    return res.status(500).json({
+      error: 'Failed to change email',
+      message: error instanceof Error ? error.message : 'Unknown error',
+    });
+  }
+}
+
+/**
+ * Изменить телефон мастера
+ */
+export async function changePhone(req: Request, res: Response) {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const validatedData = ChangePhoneSchema.parse(req.body);
+
+    // Нормализуем телефон (если начинается с 8, заменяем на +7)
+    let normalizedPhone = validatedData.newPhone.trim();
+    if (normalizedPhone.startsWith('8')) {
+      normalizedPhone = '+7' + normalizedPhone.slice(1);
+    } else if (
+      normalizedPhone.startsWith('7') &&
+      !normalizedPhone.startsWith('+7')
+    ) {
+      normalizedPhone = '+' + normalizedPhone;
+    } else if (!normalizedPhone.startsWith('+')) {
+      normalizedPhone = '+7' + normalizedPhone;
+    }
+
+    // Обновляем телефон
+    const updatedUser = await prisma.user.update({
+      where: { id: userId },
+      data: { phone: normalizedPhone },
+      select: { phone: true },
+    });
+
+    const response = ChangePhoneResponseSchema.parse({
+      success: true,
+      message: 'Телефон успешно изменен',
+      phone: updatedUser.phone,
+    });
+
+    return res.json(response);
+  } catch (error) {
+    logError('Ошибка изменения телефона', error);
+
+    if (error instanceof Error && error.name === 'ZodError') {
+      return res.status(400).json({
+        error: 'Validation error',
+        message: error.message,
+      });
+    }
+
+    return res.status(500).json({
+      error: 'Failed to change phone',
       message: error instanceof Error ? error.message : 'Unknown error',
     });
   }

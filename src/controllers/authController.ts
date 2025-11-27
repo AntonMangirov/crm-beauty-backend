@@ -285,7 +285,12 @@ export async function requestPasswordReset(req: Request, res: Response) {
 
     // Токен всегда возвращается для следующего шага верификации
     // Код показывается только в режиме разработки для тестирования
-    const response: any = {
+    const response: {
+      success: boolean;
+      message: string;
+      resetToken: string;
+      code?: string;
+    } = {
       success: true,
       message:
         'Код восстановления отправлен. Проверьте вашу почту или телефон.',

@@ -38,6 +38,62 @@ export const UpdateProfileSchema = z.object({
 
 export type UpdateProfileRequest = z.infer<typeof UpdateProfileSchema>;
 
+// Схемы для изменения пароля, email и телефона
+export const ChangePasswordSchema = z
+  .object({
+    currentPassword: z.string().min(1, 'Текущий пароль обязателен'),
+    newPassword: z
+      .string()
+      .min(6, 'Новый пароль должен содержать минимум 6 символов')
+      .max(128, 'Пароль слишком длинный'),
+  })
+  .refine(data => data.currentPassword !== data.newPassword, {
+    message: 'Новый пароль должен отличаться от текущего',
+    path: ['newPassword'],
+  });
+
+export type ChangePasswordRequest = z.infer<typeof ChangePasswordSchema>;
+
+export const ChangeEmailSchema = z.object({
+  newEmail: z.string().email('Некорректный email адрес'),
+  password: z.string().min(1, 'Пароль обязателен для подтверждения'),
+});
+
+export type ChangeEmailRequest = z.infer<typeof ChangeEmailSchema>;
+
+export const ChangePhoneSchema = z.object({
+  newPhone: z
+    .string()
+    .min(3, 'Телефон слишком короткий')
+    .max(32, 'Телефон слишком длинный'),
+});
+
+export type ChangePhoneRequest = z.infer<typeof ChangePhoneSchema>;
+
+// Схемы ответов
+export const ChangePasswordResponseSchema = z.object({
+  success: z.boolean(),
+  message: z.string(),
+});
+
+export const ChangeEmailResponseSchema = z.object({
+  success: z.boolean(),
+  message: z.string(),
+  email: z.string().email(),
+});
+
+export const ChangePhoneResponseSchema = z.object({
+  success: z.boolean(),
+  message: z.string(),
+  phone: z.string().nullable(),
+});
+
+export type ChangePasswordResponse = z.infer<
+  typeof ChangePasswordResponseSchema
+>;
+export type ChangeEmailResponse = z.infer<typeof ChangeEmailResponseSchema>;
+export type ChangePhoneResponse = z.infer<typeof ChangePhoneResponseSchema>;
+
 // Схема для фильтров записей
 // Поддерживаем оба варианта: from/to (короткие) и dateFrom/dateTo (для обратной совместимости)
 export const AppointmentsFilterSchema = z.object({

@@ -16,6 +16,9 @@ import {
   deletePortfolioPhoto,
   getLastManualAppointments,
   getTopServices,
+  changePassword,
+  changeEmail,
+  changePhone,
 } from '../controllers/meController';
 import {
   getServices,
@@ -94,5 +97,14 @@ router.post('/portfolio/photos', upload.single('photo'), uploadPortfolioPhoto);
 
 // DELETE /api/me/portfolio/photos/:id - удалить фото из портфолио
 router.delete('/portfolio/photos/:id', deletePortfolioPhoto);
+
+// PATCH /api/me/settings/password - изменить пароль
+router.patch('/settings/password', changePassword);
+
+// PATCH /api/me/settings/email - изменить email
+router.patch('/settings/email', changeEmail);
+
+// PATCH /api/me/settings/phone - изменить телефон
+router.patch('/settings/phone', changePhone);
 
 export default router;
