@@ -37,6 +37,7 @@ model User {
   integrations  Integration[]
   reviews       Review[]
   portfolioPhotos PortfolioPhoto[]
+  passwordResetTokens PasswordResetToken[]
 
   @@index([email])
   @@index([slug])
@@ -197,4 +198,28 @@ model PortfolioPhoto {
 
   @@index([masterId])
   @@index([createdAt])
+}
+
+model PasswordResetToken {
+  id        String   @id @default(cuid())
+  userId    String
+  token     String   @unique
+  code      String   // Код для SMS/Email (6 цифр)
+  type      PasswordResetType // EMAIL или PHONE
+  expiresAt DateTime
+  used      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([token])
+  @@index([code])
+  @@index([expiresAt])
+  @@index([used])
+}
+
+enum PasswordResetType {
+  EMAIL
+  PHONE
 }
