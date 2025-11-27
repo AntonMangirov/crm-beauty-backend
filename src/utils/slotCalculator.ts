@@ -22,11 +22,13 @@ export interface MasterSettings {
   slotStepMinutes: number; // Шаг генерации слотов (5/10/15)
   minServiceDurationMinutes: number; // Минимальная длительность услуги для анти-простоя
   timezone: string; // Часовой пояс мастера (например, 'Europe/Moscow')
+  autoBuffer?: boolean; // Автоматический межуслуговой буфер между любыми процедурами
 }
 
 export interface ExistingBooking {
   start: string; // ISO строка UTC
   end: string; // ISO строка UTC
+  serviceId?: string; // ID услуги для определения буфера
 }
 
 export interface ServiceInfo {
@@ -125,23 +127,105 @@ function roundUpToSlotStep(date: Date, slotStepMinutes: number): Date {
 }
 
 /**
- * Объединяет и сортирует занятые интервалы (bookings + breaks)
+ * Объединяет и сортирует занятые интервалы (bookings + breaks + auto buffers)
  */
 function mergeBusyIntervals(
   bookings: ExistingBooking[],
   breaks: Break[],
   dateStr: string,
-  timezone: string
+  timezone: string,
+  masterSettings: MasterSettings,
+  servicesInfo: ServiceInfo[]
 ): Array<{ start: Date; end: Date }> {
   const intervals: Array<{ start: Date; end: Date }> = [];
 
-  // Добавляем существующие записи
+  // Обрабатываем существующие записи с учетом буферов
+  const bookingsWithBuffers: Array<{ start: Date; end: Date }> = [];
+
   for (const booking of bookings) {
-    intervals.push({
-      start: new Date(booking.start),
-      end: new Date(booking.end),
+    const bookingStart = new Date(booking.start);
+    let bookingEnd = new Date(booking.end);
+
+    // Определяем буфер для этой услуги
+    let bufferMinutes = masterSettings.serviceBufferMinutes;
+    if (booking.serviceId) {
+      const service = servicesInfo.find(s => s.id === booking.serviceId);
+      if (service && service.bufferMinutes !== undefined) {
+        bufferMinutes = service.bufferMinutes;
+      }
+    }
+
+    // Добавляем буфер после услуги
+    bookingEnd = addMinutesToUTC(bookingEnd, bufferMinutes);
+
+    bookingsWithBuffers.push({
+      start: bookingStart,
+      end: bookingEnd,
     });
   }
+
+  // Сортируем бронирования по времени начала
+  bookingsWithBuffers.sort((a, b) => a.start.getTime() - b.start.getTime());
+
+  // Если включен автоматический межуслуговой буфер, добавляем буферы между бронированиями
+  if (masterSettings.autoBuffer) {
+    const autoBufferMinutes = masterSettings.serviceBufferMinutes;
+
+    // Создаем новый массив с автоматическими буферами
+    const bookingsWithAutoBuffers: Array<{ start: Date; end: Date }> = [];
+
+    for (let i = 0; i < bookingsWithBuffers.length; i++) {
+      const currentBooking = bookingsWithBuffers[i];
+
+      // Добавляем текущее бронирование
+      bookingsWithAutoBuffers.push({
+        start: new Date(currentBooking.start),
+        end: new Date(currentBooking.end),
+      });
+
+      // Если есть следующее бронирование, добавляем автоматический буфер между ними
+      if (i < bookingsWithBuffers.length - 1) {
+        const nextBooking = bookingsWithBuffers[i + 1];
+        const gap = getMinutesDifference(currentBooking.end, nextBooking.start);
+
+        // Если промежуток меньше автоматического буфера, расширяем текущее бронирование
+        if (gap > 0 && gap < autoBufferMinutes) {
+          // Расширяем конец текущего бронирования
+          bookingsWithAutoBuffers[bookingsWithAutoBuffers.length - 1].end =
+            new Date(nextBooking.start.getTime());
+        } else if (gap >= autoBufferMinutes) {
+          // Добавляем автоматический буфер между бронированиями
+          const autoBufferStart = currentBooking.end;
+          const autoBufferEnd = addMinutesToUTC(
+            autoBufferStart,
+            autoBufferMinutes
+          );
+
+          // Проверяем, что буфер не выходит за начало следующего бронирования
+          if (autoBufferEnd <= nextBooking.start) {
+            bookingsWithAutoBuffers.push({
+              start: autoBufferStart,
+              end: autoBufferEnd,
+            });
+          } else {
+            // Если буфер пересекается со следующим бронированием, расширяем текущее
+            bookingsWithAutoBuffers[bookingsWithAutoBuffers.length - 1].end =
+              new Date(nextBooking.start.getTime());
+          }
+        }
+      }
+    }
+
+    // Заменяем массив бронирований на версию с автоматическими буферами
+    bookingsWithBuffers.length = 0;
+    bookingsWithBuffers.push(...bookingsWithAutoBuffers);
+
+    // Пересортировываем после добавления автоматических буферов
+    bookingsWithBuffers.sort((a, b) => a.start.getTime() - b.start.getTime());
+  }
+
+  // Добавляем все бронирования с буферами в интервалы
+  intervals.push(...bookingsWithBuffers);
 
   // Добавляем перерывы мастера
   for (const breakItem of breaks) {
@@ -153,7 +237,7 @@ function mergeBusyIntervals(
   // Сортируем по времени начала
   intervals.sort((a, b) => a.start.getTime() - b.start.getTime());
 
-  // Объединяем пересекающиеся интервалы
+  // Объединяем пересекающиеся интервалы (включая перерывы и буферы)
   const merged: Array<{ start: Date; end: Date }> = [];
   for (const interval of intervals) {
     if (merged.length === 0) {
@@ -277,12 +361,14 @@ export function calculateAvailableSlots(
       continue;
     }
 
-    // Объединяем занятые интервалы (bookings + breaks)
+    // Объединяем занятые интервалы (bookings + breaks + auto buffers)
     const busyIntervals = mergeBusyIntervals(
       existingBookings,
       breaks,
       date,
-      timezone
+      timezone,
+      masterSettings,
+      servicesInfo
     );
 
     // Вычитаем занятые интервалы из рабочего времени

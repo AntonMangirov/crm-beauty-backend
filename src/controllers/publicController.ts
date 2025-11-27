@@ -673,7 +673,7 @@ export async function getTimeslots(req: Request, res: Response) {
     const endOfDay = new Date(targetDate);
     endOfDay.setUTCHours(23, 59, 59, 999);
 
-    // Получаем существующие записи
+    // Получаем существующие записи с информацией об услугах
     const existingAppointments = await prisma.appointment.findMany({
       where: {
         masterId: master.id,
@@ -688,6 +688,7 @@ export async function getTimeslots(req: Request, res: Response) {
       select: {
         startAt: true,
         endAt: true,
+        serviceId: true,
       },
     });
 
@@ -696,6 +697,7 @@ export async function getTimeslots(req: Request, res: Response) {
       apt => ({
         start: apt.startAt.toISOString(),
         end: apt.endAt.toISOString(),
+        serviceId: apt.serviceId,
       })
     );
 
@@ -747,6 +749,10 @@ export async function getTimeslots(req: Request, res: Response) {
     const slotStepMinutes = master.slotStepMinutes ?? 15;
     const timezone = req.timezone || 'Europe/Moscow';
 
+    // TODO: Получить autoBuffer из настроек мастера в БД
+    // Пока используем значение по умолчанию false
+    const autoBuffer = false;
+
     // Формируем настройки мастера для функции
     const masterSettings: MasterSettings = {
       workIntervals,
@@ -755,6 +761,7 @@ export async function getTimeslots(req: Request, res: Response) {
       slotStepMinutes,
       minServiceDurationMinutes: minServiceDuration,
       timezone,
+      autoBuffer,
     };
 
     // Вызываем умный алгоритм генерации слотов
