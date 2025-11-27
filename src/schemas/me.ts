@@ -247,3 +247,199 @@ export const AnalyticsResponseSchema = z.object({
 });
 
 export type AnalyticsResponse = z.infer<typeof AnalyticsResponseSchema>;
+
+// Схема для обновления расписания мастера
+const TimeStringSchema = z.string().regex(/^([0-1][0-9]|2[0-3]):[0-5][0-9]$/, {
+  message: 'Время должно быть в формате HH:mm (например, 09:00)',
+});
+
+const WorkIntervalSchema = z
+  .object({
+    from: TimeStringSchema,
+    to: TimeStringSchema,
+  })
+  .refine(
+    data => {
+      const [fromHours, fromMinutes] = data.from.split(':').map(Number);
+      const [toHours, toMinutes] = data.to.split(':').map(Number);
+      const fromTime = fromHours * 60 + fromMinutes;
+      const toTime = toHours * 60 + toMinutes;
+      return fromTime < toTime;
+    },
+    {
+      message: 'Время начала (from) должно быть меньше времени окончания (to)',
+    }
+  );
+
+const DayScheduleSchema = z.object({
+  dayOfWeek: z
+    .number()
+    .int()
+    .min(0, 'День недели должен быть от 0 до 6')
+    .max(6, 'День недели должен быть от 0 до 6'),
+  intervals: z
+    .array(WorkIntervalSchema)
+    .min(1, 'Должен быть хотя бы один рабочий интервал')
+    .refine(
+      intervals => {
+        // Проверяем, что интервалы не пересекаются
+        for (let i = 0; i < intervals.length; i++) {
+          for (let j = i + 1; j < intervals.length; j++) {
+            const interval1 = intervals[i];
+            const interval2 = intervals[j];
+
+            const [from1Hours, from1Minutes] = interval1.from
+              .split(':')
+              .map(Number);
+            const [to1Hours, to1Minutes] = interval1.to.split(':').map(Number);
+            const [from2Hours, from2Minutes] = interval2.from
+              .split(':')
+              .map(Number);
+            const [to2Hours, to2Minutes] = interval2.to.split(':').map(Number);
+
+            const from1Time = from1Hours * 60 + from1Minutes;
+            const to1Time = to1Hours * 60 + to1Minutes;
+            const from2Time = from2Hours * 60 + from2Minutes;
+            const to2Time = to2Hours * 60 + to2Minutes;
+
+            // Проверяем пересечение: интервалы пересекаются если
+            // from1 < to2 && from2 < to1
+            if (from1Time < to2Time && from2Time < to1Time) {
+              return false;
+            }
+          }
+        }
+        return true;
+      },
+      {
+        message: 'Рабочие интервалы не должны пересекаться',
+      }
+    ),
+});
+
+const BreakSchema = z
+  .object({
+    from: TimeStringSchema,
+    to: TimeStringSchema,
+    reason: z.string().max(200, 'Причина перерыва слишком длинная').optional(),
+  })
+  .refine(
+    data => {
+      const [fromHours, fromMinutes] = data.from.split(':').map(Number);
+      const [toHours, toMinutes] = data.to.split(':').map(Number);
+      const fromTime = fromHours * 60 + fromMinutes;
+      const toTime = toHours * 60 + toMinutes;
+      return fromTime < toTime;
+    },
+    {
+      message:
+        'Время начала перерыва (from) должно быть меньше времени окончания (to)',
+    }
+  );
+
+export const UpdateScheduleSchema = z
+  .object({
+    workSchedule: z
+      .array(DayScheduleSchema)
+      .optional()
+      .refine(
+        schedule => {
+          if (!schedule) return true;
+          // Проверяем, что нет дубликатов дней недели
+          const dayOfWeeks = schedule.map(s => s.dayOfWeek);
+          return new Set(dayOfWeeks).size === dayOfWeeks.length;
+        },
+        {
+          message: 'Не должно быть дубликатов дней недели в расписании',
+        }
+      ),
+    breaks: z.array(BreakSchema).optional(),
+    defaultBufferMinutes: z
+      .number()
+      .int()
+      .min(10, 'Буфер должен быть не менее 10 минут')
+      .max(30, 'Буфер не должен превышать 30 минут')
+      .optional(),
+    slotStepMinutes: z
+      .union([z.literal(5), z.literal(10), z.literal(15)])
+      .optional(),
+  })
+  .refine(
+    data => {
+      // Проверяем, что перерывы не выходят за рабочие интервалы
+      if (!data.workSchedule || !data.breaks || data.breaks.length === 0) {
+        return true;
+      }
+
+      // Создаем карту рабочих интервалов по дням недели
+      const workIntervalsByDay = new Map<
+        number,
+        Array<{ from: number; to: number }>
+      >();
+
+      for (const daySchedule of data.workSchedule) {
+        const intervals = daySchedule.intervals.map(interval => {
+          const [fromHours, fromMinutes] = interval.from.split(':').map(Number);
+          const [toHours, toMinutes] = interval.to.split(':').map(Number);
+          return {
+            from: fromHours * 60 + fromMinutes,
+            to: toHours * 60 + toMinutes,
+          };
+        });
+        workIntervalsByDay.set(daySchedule.dayOfWeek, intervals);
+      }
+
+      // Проверяем каждый перерыв
+      for (const breakItem of data.breaks) {
+        const [breakFromHours, breakFromMinutes] = breakItem.from
+          .split(':')
+          .map(Number);
+        const [breakToHours, breakToMinutes] = breakItem.to
+          .split(':')
+          .map(Number);
+        const breakFromTime = breakFromHours * 60 + breakFromMinutes;
+        const breakToTime = breakToHours * 60 + breakToMinutes;
+
+        // Перерыв должен находиться внутри хотя бы одного рабочего интервала любого дня
+        let foundInWorkInterval = false;
+
+        for (const [, intervals] of workIntervalsByDay) {
+          for (const interval of intervals) {
+            // Перерыв находится внутри интервала если
+            // breakFrom >= interval.from && breakTo <= interval.to
+            if (breakFromTime >= interval.from && breakToTime <= interval.to) {
+              foundInWorkInterval = true;
+              break;
+            }
+          }
+          if (foundInWorkInterval) break;
+        }
+
+        if (!foundInWorkInterval) {
+          return false;
+        }
+      }
+
+      return true;
+    },
+    {
+      message: 'Перерывы должны находиться внутри рабочих интервалов',
+    }
+  );
+
+export type UpdateScheduleRequest = z.infer<typeof UpdateScheduleSchema>;
+
+export const UpdateScheduleResponseSchema = z.object({
+  success: z.boolean(),
+  message: z.string(),
+  schedule: z.object({
+    workSchedule: z.array(DayScheduleSchema).nullable(),
+    breaks: z.array(BreakSchema).nullable(),
+    defaultBufferMinutes: z.number().int().nullable(),
+    slotStepMinutes: z.number().int().nullable(),
+  }),
+});
+
+export type UpdateScheduleResponse = z.infer<
+  typeof UpdateScheduleResponseSchema
+>;

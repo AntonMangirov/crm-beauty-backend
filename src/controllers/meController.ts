@@ -15,6 +15,8 @@ import {
   ChangeEmailResponseSchema,
   ChangePhoneSchema,
   ChangePhoneResponseSchema,
+  UpdateScheduleSchema,
+  UpdateScheduleResponseSchema,
 } from '../schemas/me';
 import { Prisma } from '@prisma/client';
 import { geocodeAndCache } from '../utils/geocoding';
@@ -26,6 +28,7 @@ import { AppointmentNotFoundError } from '../errors/BusinessErrors';
 import { ForbiddenError } from '../errors/AppError';
 import { logError } from '../utils/logger';
 import { hashPassword, verifyPassword } from '../utils/password';
+import { z } from 'zod';
 
 /**
  * Получить полную информацию о текущем мастере со статистикой
@@ -1645,6 +1648,82 @@ export async function changePhone(req: Request, res: Response) {
 
     return res.status(500).json({
       error: 'Failed to change phone',
+      message: error instanceof Error ? error.message : 'Unknown error',
+    });
+  }
+}
+
+/**
+ * Обновить расписание работы мастера
+ */
+export async function updateSchedule(req: Request, res: Response) {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const validatedData = UpdateScheduleSchema.parse(req.body);
+    const updateData: Prisma.UserUpdateInput = {};
+
+    // Обновляем workSchedule если передан
+    if (validatedData.workSchedule !== undefined) {
+      updateData.workSchedule =
+        validatedData.workSchedule as Prisma.InputJsonValue;
+    }
+
+    // Обновляем breaks если передан
+    if (validatedData.breaks !== undefined) {
+      updateData.breaks = validatedData.breaks as Prisma.InputJsonValue;
+    }
+
+    // Обновляем defaultBufferMinutes если передан
+    if (validatedData.defaultBufferMinutes !== undefined) {
+      updateData.defaultBufferMinutes = validatedData.defaultBufferMinutes;
+    }
+
+    // Обновляем slotStepMinutes если передан
+    if (validatedData.slotStepMinutes !== undefined) {
+      updateData.slotStepMinutes = validatedData.slotStepMinutes;
+    }
+
+    // Обновляем пользователя
+    const updatedUser = await prisma.user.update({
+      where: { id: userId },
+      data: updateData,
+      select: {
+        workSchedule: true,
+        breaks: true,
+        defaultBufferMinutes: true,
+        slotStepMinutes: true,
+      },
+    });
+
+    const response = UpdateScheduleResponseSchema.parse({
+      success: true,
+      message: 'Расписание успешно обновлено',
+      schedule: {
+        workSchedule: updatedUser.workSchedule as unknown,
+        breaks: updatedUser.breaks as unknown,
+        defaultBufferMinutes: updatedUser.defaultBufferMinutes,
+        slotStepMinutes: updatedUser.slotStepMinutes,
+      },
+    });
+
+    return res.json(response);
+  } catch (error) {
+    logError('Ошибка обновления расписания', error);
+
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({
+        error: 'Validation error',
+        message: 'Ошибка валидации данных расписания',
+        details: error.flatten(),
+      });
+    }
+
+    return res.status(500).json({
+      error: 'Failed to update schedule',
       message: error instanceof Error ? error.message : 'Unknown error',
     });
   }

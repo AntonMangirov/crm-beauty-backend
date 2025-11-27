@@ -1,5 +1,7 @@
 import { Router } from 'express';
 import { auth } from '../middleware/auth';
+import { validate } from '../middleware/validate';
+import { UpdateScheduleSchema } from '../schemas/me';
 import {
   getMe,
   updateProfile,
@@ -19,6 +21,7 @@ import {
   changePassword,
   changeEmail,
   changePhone,
+  updateSchedule,
 } from '../controllers/meController';
 import {
   getServices,
@@ -106,5 +109,12 @@ router.patch('/settings/email', changeEmail);
 
 // PATCH /api/me/settings/phone - изменить телефон
 router.patch('/settings/phone', changePhone);
+
+// PUT /api/me/schedule - обновить расписание работы мастера
+router.put(
+  '/schedule',
+  validate({ body: UpdateScheduleSchema }),
+  updateSchedule
+);
 
 export default router;
