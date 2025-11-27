@@ -19,6 +19,12 @@ import {
 } from '../errors/BusinessErrors';
 import { addMinutesToUTC, formatUTCToISO } from '../utils/timeUtils';
 import { TimeslotsResponseSchema } from '../schemas/public';
+import {
+  calculateAvailableSlots,
+  MasterSettings,
+  ExistingBooking,
+  ServiceInfo,
+} from '../utils/slotCalculator';
 import { geocodeAndCache } from '../utils/geocoding';
 import { verifyCaptcha } from '../utils/recaptcha';
 import { normalizePhone } from '../utils/validation';
@@ -584,7 +590,7 @@ export async function getTimeslots(req: Request, res: Response) {
     }
 
     // Определяем дату для поиска слотов
-    let targetDate: Date;
+    let targetDateStr: string;
     if (date) {
       // Если дата передана, парсим её (ожидаем формат YYYY-MM-DD)
       if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
@@ -601,34 +607,67 @@ export async function getTimeslots(req: Request, res: Response) {
           message: 'Неверный формат даты',
         });
       }
-      targetDate = parsedDate;
+      targetDateStr = date;
     } else {
-      targetDate = new Date();
-      targetDate.setUTCDate(targetDate.getUTCDate() + 1);
-      targetDate.setUTCHours(0, 0, 0, 0);
+      const tomorrow = new Date();
+      tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
+      targetDateStr = tomorrow.toISOString().split('T')[0];
     }
 
-    let serviceDuration = 60;
+    // Получаем информацию об услугах
+    const serviceIds: string[] = [];
+    const servicesInfo: ServiceInfo[] = [];
+
     if (serviceId) {
+      serviceIds.push(serviceId);
       const service = await prisma.service.findFirst({
         where: {
           id: serviceId,
           masterId: master.id,
           isActive: true,
         },
-        select: { durationMin: true },
+        select: { id: true, durationMin: true },
       });
 
       if (service) {
-        serviceDuration = service.durationMin;
+        servicesInfo.push({
+          id: service.id,
+          durationMin: service.durationMin,
+        });
       }
     }
 
+    // Если услуги не найдены, получаем все активные услуги мастера для расчета минимальной длительности
+    if (servicesInfo.length === 0) {
+      const allServices = await prisma.service.findMany({
+        where: {
+          masterId: master.id,
+          isActive: true,
+        },
+        select: { id: true, durationMin: true },
+      });
+
+      for (const svc of allServices) {
+        servicesInfo.push({
+          id: svc.id,
+          durationMin: svc.durationMin,
+        });
+      }
+    }
+
+    // Вычисляем минимальную длительность услуги для анти-простоя
+    const minServiceDuration =
+      servicesInfo.length > 0
+        ? Math.min(...servicesInfo.map(s => s.durationMin))
+        : 15; // По умолчанию 15 минут
+
+    const targetDate = new Date(targetDateStr + 'T00:00:00.000Z');
     const startOfDay = new Date(targetDate);
     startOfDay.setUTCHours(0, 0, 0, 0);
     const endOfDay = new Date(targetDate);
     endOfDay.setUTCHours(23, 59, 59, 999);
 
+    // Получаем существующие записи
     const existingAppointments = await prisma.appointment.findMany({
       where: {
         masterId: master.id,
@@ -646,40 +685,36 @@ export async function getTimeslots(req: Request, res: Response) {
       },
     });
 
-    const availableSlots: string[] = [];
-    const workStartHour = 9;
-    const workEndHour = 18;
-    const slotInterval = 60;
+    // Преобразуем записи в формат для функции
+    const existingBookings: ExistingBooking[] = existingAppointments.map(
+      apt => ({
+        start: apt.startAt.toISOString(),
+        end: apt.endAt.toISOString(),
+      })
+    );
 
-    for (let hour = workStartHour; hour < workEndHour; hour++) {
-      for (let minute = 0; minute < 60; minute += slotInterval) {
-        const slotStart = new Date(targetDate);
-        slotStart.setUTCHours(hour, minute, 0, 0);
+    // TODO: Получить настройки мастера из базы данных
+    // Пока используем значения по умолчанию
+    // Когда настройки будут добавлены в БД, здесь нужно будет их загрузить
+    const masterSettings: MasterSettings = {
+      workIntervals: [
+        { start: '09:00', end: '18:00' }, // По умолчанию 9:00-18:00
+      ],
+      breaks: [], // По умолчанию нет перерывов
+      serviceBufferMinutes: 15, // По умолчанию 15 минут буфера
+      slotStepMinutes: 15, // По умолчанию шаг 15 минут
+      minServiceDurationMinutes: minServiceDuration,
+      timezone: (req as any).timezone || 'Europe/Moscow', // Используем часовой пояс из заголовка или по умолчанию
+    };
 
-        if (slotStart < new Date()) {
-          continue;
-        }
-
-        const slotEnd = addMinutesToUTC(slotStart, serviceDuration);
-
-        if (slotEnd.getUTCHours() > workEndHour) {
-          continue;
-        }
-
-        const isAvailable = !existingAppointments.some(apt => {
-          const aptStart = apt.startAt;
-          const aptEnd = apt.endAt;
-          return (
-            (slotStart >= aptStart && slotStart < aptEnd) ||
-            (aptStart >= slotStart && aptStart < slotEnd)
-          );
-        });
-
-        if (isAvailable) {
-          availableSlots.push(formatUTCToISO(slotStart));
-        }
-      }
-    }
+    // Вызываем умный алгоритм генерации слотов
+    const availableSlots = calculateAvailableSlots(
+      targetDateStr,
+      serviceIds,
+      masterSettings,
+      existingBookings,
+      servicesInfo
+    );
 
     const response = TimeslotsResponseSchema.parse({
       available: availableSlots,
