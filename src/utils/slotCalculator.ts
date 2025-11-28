@@ -38,6 +38,16 @@ export interface ServiceInfo {
 }
 
 /**
+ * Тип для мастера с настройками расписания (из БД)
+ */
+export interface MasterWithSchedule {
+  workSchedule: unknown; // JSON из БД: Array<{ dayOfWeek: number, intervals: Array<{ from: string, to: string }> }>
+  breaks: unknown; // JSON из БД: Array<{ from: string, to: string, reason?: string }>
+  defaultBufferMinutes: number | null;
+  slotStepMinutes: number | null;
+}
+
+/**
  * Преобразует локальное время (HH:mm) в UTC Date для указанной даты
  * Использует правильное преобразование с учетом часового пояса мастера
  */
@@ -458,6 +468,84 @@ export function calculateAvailableSlots(
   availableSlots.sort((a, b) => new Date(a).getTime() - new Date(b).getTime());
 
   return availableSlots;
+}
+
+/**
+ * Получает расписание мастера для конкретной даты
+ *
+ * @param master - Мастер с настройками расписания из БД
+ * @param date - Дата (Date объект или строка YYYY-MM-DD)
+ * @param timezone - Часовой пояс мастера (по умолчанию 'Europe/Moscow')
+ * @param minServiceDurationMinutes - Минимальная длительность услуги для анти-простоя (по умолчанию 15)
+ * @returns Настройки мастера для указанной даты
+ */
+export function getMasterDailySchedule(
+  master: MasterWithSchedule,
+  date: Date | string,
+  timezone: string = 'Europe/Moscow',
+  minServiceDurationMinutes: number = 15
+): MasterSettings {
+  // Преобразуем дату в Date объект, если это строка
+  const dateObj =
+    typeof date === 'string' ? new Date(date + 'T00:00:00.000Z') : date;
+
+  // Получаем день недели в часовом поясе мастера
+  const { dayOfWeek } = getLocalDateTimeComponents(dateObj, timezone);
+
+  // Преобразуем workSchedule из JSON в workIntervals для конкретной даты
+  let workIntervals: WorkInterval[] = [];
+  if (master.workSchedule && typeof master.workSchedule === 'object') {
+    const schedule = master.workSchedule as Array<{
+      dayOfWeek: number;
+      intervals: Array<{ from: string; to: string }>;
+    }>;
+
+    // Ищем расписание для текущего дня недели
+    const daySchedule = schedule.find(s => s.dayOfWeek === dayOfWeek);
+    if (daySchedule && daySchedule.intervals) {
+      workIntervals = daySchedule.intervals.map(interval => ({
+        start: interval.from,
+        end: interval.to,
+      }));
+    }
+  }
+
+  // Если workSchedule = null или не найден для этого дня → используем fallback
+  if (workIntervals.length === 0) {
+    workIntervals = [{ start: '09:00', end: '18:00' }];
+  }
+
+  // Преобразуем breaks из JSON
+  let breaks: Break[] = [];
+  if (master.breaks && typeof master.breaks === 'object') {
+    const breaksData = master.breaks as Array<{
+      from: string;
+      to: string;
+      reason?: string;
+    }>;
+    breaks = breaksData.map(breakItem => ({
+      start: breakItem.from,
+      end: breakItem.to,
+    }));
+  }
+
+  // Получаем настройки с fallback значениями
+  const serviceBufferMinutes = master.defaultBufferMinutes ?? 15;
+  const slotStepMinutes = master.slotStepMinutes ?? 15;
+
+  // TODO: Получить autoBuffer из настроек мастера в БД
+  // Пока используем значение по умолчанию false
+  const autoBuffer = false;
+
+  return {
+    workIntervals,
+    breaks,
+    serviceBufferMinutes,
+    slotStepMinutes,
+    minServiceDurationMinutes,
+    timezone,
+    autoBuffer,
+  };
 }
 
 /**
