@@ -21,6 +21,7 @@ import {
   changePassword,
   changeEmail,
   changePhone,
+  getSchedule,
   updateSchedule,
 } from '../controllers/meController';
 import {
@@ -109,6 +110,9 @@ router.patch('/settings/email', changeEmail);
 
 // PATCH /api/me/settings/phone - изменить телефон
 router.patch('/settings/phone', changePhone);
+
+// GET /api/me/schedule - получить расписание работы мастера
+router.get('/schedule', getSchedule);
 
 // PUT /api/me/schedule - обновить расписание работы мастера
 router.put(

@@ -184,6 +184,7 @@ export async function bookPublicSlot(req: Request, res: Response) {
       where: { slug },
       select: {
         id: true,
+        name: true,
         isActive: true,
         workSchedule: true,
         breaks: true,
@@ -211,7 +212,7 @@ export async function bookPublicSlot(req: Request, res: Response) {
       price,
       durationOverride,
     } = req.body as {
-      name: string;
+      name?: string;
       phone?: string;
       telegramUsername?: string;
       serviceId: string;
@@ -474,7 +475,7 @@ export async function bookPublicSlot(req: Request, res: Response) {
       try {
         const notificationData: NotificationData = {
           appointmentId: appointment.id,
-          clientName: name,
+          ...(name && name.trim() && { clientName: name.trim() }),
           ...(normalizedPhone && { clientPhone: normalizedPhone }),
           ...(normalizedTelegramUsername && {
             clientTelegramUsername: normalizedTelegramUsername,
@@ -593,7 +594,7 @@ export async function bookPublicSlot(req: Request, res: Response) {
 export async function getTimeslots(req: Request, res: Response) {
   try {
     const { slug } = req.params;
-    const validatedQuery = req.validatedQuery as
+    const validatedQuery = (req as any).validatedQuery as
       | {
           date?: string;
           serviceId?: string;

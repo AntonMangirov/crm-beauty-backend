@@ -58,7 +58,7 @@ export type SlugParams = z.infer<typeof SlugParamSchema>;
 
 export const BookingRequestSchema = z
   .object({
-    name: z.string().min(1, 'Имя обязательно').max(100, 'Имя слишком длинное'),
+    name: z.string().max(100, 'Имя слишком длинное').optional(),
     phone: z.string().optional(),
     telegramUsername: z.string().optional(),
     serviceId: z.string().min(1, 'ID услуги обязателен'),

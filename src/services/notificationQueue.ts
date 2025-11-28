@@ -5,7 +5,7 @@ import { logError, logInfo, logWarn } from '../utils/logger';
 // Интерфейс для данных уведомления
 export interface NotificationData {
   appointmentId: string;
-  clientName: string;
+  clientName?: string; // Опционально, имя клиента
   clientPhone?: string; // Опционально, так как может быть telegramUsername
   clientTelegramUsername?: string; // Опционально, альтернатива телефону
   masterName: string;

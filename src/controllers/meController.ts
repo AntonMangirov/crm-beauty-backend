@@ -1654,6 +1654,52 @@ export async function changePhone(req: Request, res: Response) {
 }
 
 /**
+ * Получить расписание работы мастера
+ */
+export async function getSchedule(req: Request, res: Response) {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        workSchedule: true,
+        breaks: true,
+        defaultBufferMinutes: true,
+        slotStepMinutes: true,
+      },
+    });
+
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    const response = UpdateScheduleResponseSchema.parse({
+      success: true,
+      message: 'Расписание успешно получено',
+      schedule: {
+        workSchedule: user.workSchedule as unknown,
+        breaks: user.breaks as unknown,
+        defaultBufferMinutes: user.defaultBufferMinutes,
+        slotStepMinutes: user.slotStepMinutes,
+      },
+    });
+
+    return res.json(response);
+  } catch (error) {
+    logError('Ошибка получения расписания', error);
+
+    return res.status(500).json({
+      error: 'Failed to fetch schedule',
+      message: error instanceof Error ? error.message : 'Unknown error',
+    });
+  }
+}
+
+/**
  * Обновить расписание работы мастера
  */
 export async function updateSchedule(req: Request, res: Response) {
