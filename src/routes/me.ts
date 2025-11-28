@@ -1,13 +1,18 @@
 import { Router } from 'express';
 import { auth } from '../middleware/auth';
 import { validate } from '../middleware/validate';
-import { UpdateScheduleSchema, UpdateClientSchema } from '../schemas/me';
+import {
+  UpdateScheduleSchema,
+  UpdateClientSchema,
+  RescheduleAppointmentSchema,
+} from '../schemas/me';
 import {
   getMe,
   updateProfile,
   getAppointments,
   uploadPhoto,
   updateAppointmentStatus,
+  rescheduleAppointment,
   getClients,
   getClientHistory,
   updateClient,
@@ -56,6 +61,13 @@ router.get('/appointments/last-manual', getLastManualAppointments);
 
 // PUT /api/me/appointments/:id - обновить статус записи
 router.put('/appointments/:id', updateAppointmentStatus);
+
+// PATCH /api/me/appointments/:id/reschedule - перенести встречу (изменить время)
+router.patch(
+  '/appointments/:id/reschedule',
+  validate({ body: RescheduleAppointmentSchema }),
+  rescheduleAppointment
+);
 
 // POST /api/me/appointments/:id/photos - загрузить фото к записи
 router.post(

@@ -5,6 +5,7 @@ import {
   MeResponseSchema,
   AppointmentsFilterSchema,
   UpdateAppointmentStatusSchema,
+  RescheduleAppointmentSchema,
   ClientListItemSchema,
   ClientHistoryResponseSchema,
   UploadAppointmentPhotosResponseSchema,
@@ -24,7 +25,10 @@ import {
   uploadImageToCloudinary,
   deleteImageFromCloudinary,
 } from '../utils/cloudinary';
-import { AppointmentNotFoundError } from '../errors/BusinessErrors';
+import {
+  AppointmentNotFoundError,
+  TimeSlotConflictError,
+} from '../errors/BusinessErrors';
 import { ForbiddenError } from '../errors/AppError';
 import { logError } from '../utils/logger';
 import { hashPassword, verifyPassword } from '../utils/password';
@@ -615,6 +619,174 @@ export async function updateAppointmentStatus(req: Request, res: Response) {
 
     return res.status(500).json({
       error: 'Failed to update appointment status',
+      message: error instanceof Error ? error.message : 'Unknown error',
+    });
+  }
+}
+
+/**
+ * Перенести встречу (изменить время)
+ */
+export async function rescheduleAppointment(req: Request, res: Response) {
+  try {
+    const masterId = req.user?.id;
+    if (!masterId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const { id } = req.params;
+    if (!id) {
+      return res.status(400).json({ error: 'Appointment ID is required' });
+    }
+
+    const validatedData = RescheduleAppointmentSchema.parse(req.body);
+    const newStartAt = new Date(validatedData.startAt);
+
+    // Получаем встречу с информацией об услуге
+    const appointment = await prisma.appointment.findUnique({
+      where: { id },
+      include: {
+        service: {
+          select: {
+            id: true,
+            name: true,
+            durationMin: true,
+          },
+        },
+      },
+    });
+
+    if (!appointment) {
+      const notFoundError = new AppointmentNotFoundError(id);
+      return res.status(notFoundError.statusCode).json({
+        error: notFoundError.message,
+        code: notFoundError.code,
+      });
+    }
+
+    if (appointment.masterId !== masterId) {
+      const forbiddenError = new ForbiddenError(
+        'Appointment does not belong to the current user',
+        'APPOINTMENT_ACCESS_DENIED'
+      );
+      return res.status(forbiddenError.statusCode).json({
+        error: forbiddenError.message,
+        code: forbiddenError.code,
+      });
+    }
+
+    // Вычисляем новое время окончания на основе длительности услуги
+    const durationMs = appointment.service.durationMin * 60 * 1000;
+    const newEndAt = new Date(newStartAt.getTime() + durationMs);
+
+    // Проверяем, что новое время не в прошлом
+    if (newStartAt < new Date()) {
+      return res.status(400).json({
+        error: 'Cannot reschedule to past time',
+        message: 'Нельзя перенести встречу на прошедшее время',
+      });
+    }
+
+    // Проверяем конфликты времени (исключая текущую встречу)
+    const overlapping = await prisma.appointment.findFirst({
+      where: {
+        masterId,
+        id: { not: id }, // Исключаем текущую встречу
+        OR: [
+          { startAt: { lte: newStartAt }, endAt: { gt: newStartAt } },
+          { startAt: { lt: newEndAt }, endAt: { gte: newEndAt } },
+          { startAt: { gte: newStartAt }, endAt: { lte: newEndAt } },
+        ],
+      },
+    });
+
+    if (overlapping) {
+      const conflictError = new TimeSlotConflictError(
+        newStartAt.toISOString(),
+        newEndAt.toISOString()
+      );
+      return res.status(conflictError.statusCode).json({
+        error: conflictError.message,
+        code: conflictError.code,
+      });
+    }
+
+    // Обновляем встречу
+    const updatedAppointment = await prisma.appointment.update({
+      where: { id },
+      data: {
+        startAt: newStartAt,
+        endAt: newEndAt,
+      },
+      include: {
+        client: {
+          select: {
+            id: true,
+            name: true,
+            phone: true,
+            telegramUsername: true,
+            email: true,
+          },
+        },
+        service: {
+          select: {
+            id: true,
+            name: true,
+            price: true,
+            durationMin: true,
+          },
+        },
+      },
+    });
+
+    const response = {
+      id: updatedAppointment.id,
+      masterId: updatedAppointment.masterId,
+      clientId: updatedAppointment.clientId,
+      serviceId: updatedAppointment.serviceId,
+      startAt: updatedAppointment.startAt,
+      endAt: updatedAppointment.endAt,
+      status: updatedAppointment.status,
+      source: updatedAppointment.source,
+      notes: updatedAppointment.notes,
+      price: updatedAppointment.price ? Number(updatedAppointment.price) : null,
+      createdAt: updatedAppointment.createdAt,
+      updatedAt: updatedAppointment.updatedAt,
+      client: updatedAppointment.client,
+      service: {
+        ...updatedAppointment.service,
+        price: Number(updatedAppointment.service.price),
+      },
+    };
+
+    return res.json(response);
+  } catch (error) {
+    logError('Ошибка переноса встречи', error);
+
+    if (
+      error instanceof AppointmentNotFoundError ||
+      error instanceof ForbiddenError ||
+      error instanceof TimeSlotConflictError
+    ) {
+      const appError = error as
+        | AppointmentNotFoundError
+        | ForbiddenError
+        | TimeSlotConflictError;
+      return res.status(appError.statusCode).json({
+        error: appError.message,
+        code: appError.code,
+      });
+    }
+
+    if (error instanceof Error && error.name === 'ZodError') {
+      return res.status(400).json({
+        error: 'Validation error',
+        details: error.message,
+      });
+    }
+
+    return res.status(500).json({
+      error: 'Failed to reschedule appointment',
       message: error instanceof Error ? error.message : 'Unknown error',
     });
   }

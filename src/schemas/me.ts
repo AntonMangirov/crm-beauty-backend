@@ -143,6 +143,15 @@ export type UpdateAppointmentStatusRequest = z.infer<
   typeof UpdateAppointmentStatusSchema
 >;
 
+// Схема для переноса записи (изменения времени)
+export const RescheduleAppointmentSchema = z.object({
+  startAt: z.string().datetime(),
+});
+
+export type RescheduleAppointmentRequest = z.infer<
+  typeof RescheduleAppointmentSchema
+>;
+
 // Схема для ответа /me с полной информацией о мастере
 export const MeResponseSchema = z.object({
   id: z.string(),

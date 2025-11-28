@@ -3,29 +3,35 @@
 ## ✅ Выполнено
 
 ### 1. Обновлена модель Prisma
+
 **Файл**: `prisma/schema.prisma`
 
 Добавлены новые поля в модель `User`:
+
 - `workSchedule` (Json?) - расписание работы по дням недели
-- `breaks` (Json?) - перерывы мастера  
+- `breaks` (Json?) - перерывы мастера
 - `defaultBufferMinutes` (Int?) @default(15) - буфер после услуги
 - `slotStepMinutes` (Int?) @default(15) - шаг генерации слотов
 
 ### 2. Создана миграция SQL
+
 **Файл**: `prisma/migrations/20250125000000_add_master_schedule_settings/migration.sql`
 
 Миграция добавляет новые поля с значениями по умолчанию:
+
 - `workSchedule` → NULL
-- `breaks` → NULL  
+- `breaks` → NULL
 - `defaultBufferMinutes` → 15
 - `slotStepMinutes` → 15
 
 ### 3. Анализ совместимости
+
 **Файл**: `MIGRATION_MASTER_SCHEDULE_SETTINGS.md`
 
 ## 📋 Следующие шаги
 
 1. **Применить миграцию**:
+
    ```bash
    cd crm-beauty-backend
    npx prisma migrate deploy
@@ -34,6 +40,7 @@
    ```
 
 2. **Обновить Prisma Client**:
+
    ```bash
    npx prisma generate
    ```
@@ -57,5 +64,3 @@
 
 Полная документация доступна в файле:
 `MIGRATION_MASTER_SCHEDULE_SETTINGS.md`
-
-
