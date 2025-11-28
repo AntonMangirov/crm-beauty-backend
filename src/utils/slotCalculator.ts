@@ -471,6 +471,164 @@ export function calculateAvailableSlots(
 }
 
 /**
+ * Проверяет, что строка соответствует формату времени HH:mm
+ */
+function isValidTimeFormat(time: string): boolean {
+  if (typeof time !== 'string') {
+    return false;
+  }
+  const timeRegex = /^([0-1][0-9]|2[0-3]):[0-5][0-9]$/;
+  return timeRegex.test(time);
+}
+
+/**
+ * Преобразует время в минуты для сравнения
+ */
+function timeToMinutes(time: string): number {
+  const [hours, minutes] = time.split(':').map(Number);
+  return hours * 60 + minutes;
+}
+
+/**
+ * Проверяет, что интервал валиден (from < to)
+ */
+function isValidInterval(from: string, to: string): boolean {
+  if (!isValidTimeFormat(from) || !isValidTimeFormat(to)) {
+    return false;
+  }
+  return timeToMinutes(from) < timeToMinutes(to);
+}
+
+/**
+ * Нормализует и валидирует workSchedule из БД
+ *
+ * @param rawSchedule - Сырые данные workSchedule из БД (может быть любым типом)
+ * @returns Нормализованное расписание или null если данные невалидны
+ */
+export function normalizeWorkSchedule(rawSchedule: unknown): Array<{
+  dayOfWeek: number;
+  intervals: Array<{ from: string; to: string }>;
+}> | null {
+  // Если данные отсутствуют или не объект
+  if (!rawSchedule || typeof rawSchedule !== 'object') {
+    return null;
+  }
+
+  // Проверяем, что это массив
+  if (!Array.isArray(rawSchedule)) {
+    return null;
+  }
+
+  // Нормализуем каждый день недели
+  const normalizedSchedule: Array<{
+    dayOfWeek: number;
+    intervals: Array<{ from: string; to: string }>;
+  }> = [];
+
+  for (const daySchedule of rawSchedule) {
+    // Проверяем структуру дня
+    if (
+      !daySchedule ||
+      typeof daySchedule !== 'object' ||
+      typeof daySchedule.dayOfWeek !== 'number'
+    ) {
+      continue; // Пропускаем некорректный день
+    }
+
+    const dayOfWeek = daySchedule.dayOfWeek;
+
+    // Проверяем, что dayOfWeek в допустимом диапазоне (0-6)
+    if (dayOfWeek < 0 || dayOfWeek > 6 || !Number.isInteger(dayOfWeek)) {
+      continue; // Пропускаем некорректный день недели
+    }
+
+    // Проверяем наличие intervals
+    if (!daySchedule.intervals || !Array.isArray(daySchedule.intervals)) {
+      continue; // Пропускаем день без интервалов
+    }
+
+    // Нормализуем интервалы
+    const normalizedIntervals: Array<{ from: string; to: string }> = [];
+
+    for (const interval of daySchedule.intervals) {
+      // Проверяем структуру интервала
+      if (
+        !interval ||
+        typeof interval !== 'object' ||
+        typeof interval.from !== 'string' ||
+        typeof interval.to !== 'string'
+      ) {
+        continue; // Пропускаем некорректный интервал
+      }
+
+      const { from, to } = interval;
+
+      // Проверяем формат времени и корректность интервала
+      if (isValidInterval(from, to)) {
+        normalizedIntervals.push({ from, to });
+      }
+      // Иначе пропускаем некорректный интервал
+    }
+
+    // Добавляем день только если есть хотя бы один валидный интервал
+    if (normalizedIntervals.length > 0) {
+      normalizedSchedule.push({
+        dayOfWeek,
+        intervals: normalizedIntervals,
+      });
+    }
+  }
+
+  // Возвращаем null если не осталось валидных дней
+  return normalizedSchedule.length > 0 ? normalizedSchedule : null;
+}
+
+/**
+ * Нормализует и валидирует breaks из БД
+ *
+ * @param rawBreaks - Сырые данные breaks из БД (может быть любым типом)
+ * @returns Нормализованные перерывы или пустой массив если данные невалидны
+ */
+export function normalizeBreaks(
+  rawBreaks: unknown
+): Array<{ from: string; to: string }> {
+  // Если данные отсутствуют или не объект
+  if (!rawBreaks || typeof rawBreaks !== 'object') {
+    return [];
+  }
+
+  // Проверяем, что это массив
+  if (!Array.isArray(rawBreaks)) {
+    return [];
+  }
+
+  // Нормализуем перерывы
+  const normalizedBreaks: Array<{ from: string; to: string }> = [];
+
+  for (const breakItem of rawBreaks) {
+    // Проверяем структуру перерыва
+    if (
+      !breakItem ||
+      typeof breakItem !== 'object' ||
+      typeof breakItem.from !== 'string' ||
+      typeof breakItem.to !== 'string'
+    ) {
+      continue; // Пропускаем некорректный перерыв
+    }
+
+    const { from, to } = breakItem;
+
+    // Проверяем формат времени и корректность интервала
+    if (isValidInterval(from, to)) {
+      normalizedBreaks.push({ from, to });
+    }
+    // Иначе пропускаем некорректный перерыв
+  }
+
+  return normalizedBreaks;
+}
+
+/**
  * Получает расписание мастера для конкретной даты
  *
  * @param master - Мастер с настройками расписания из БД
@@ -492,16 +650,14 @@ export function getMasterDailySchedule(
   // Получаем день недели в часовом поясе мастера
   const { dayOfWeek } = getLocalDateTimeComponents(dateObj, timezone);
 
-  // Преобразуем workSchedule из JSON в workIntervals для конкретной даты
-  let workIntervals: WorkInterval[] = [];
-  if (master.workSchedule && typeof master.workSchedule === 'object') {
-    const schedule = master.workSchedule as Array<{
-      dayOfWeek: number;
-      intervals: Array<{ from: string; to: string }>;
-    }>;
+  // Нормализуем и валидируем workSchedule
+  const normalizedSchedule = normalizeWorkSchedule(master.workSchedule);
 
+  // Преобразуем workSchedule в workIntervals для конкретной даты
+  let workIntervals: WorkInterval[] = [];
+  if (normalizedSchedule) {
     // Ищем расписание для текущего дня недели
-    const daySchedule = schedule.find(s => s.dayOfWeek === dayOfWeek);
+    const daySchedule = normalizedSchedule.find(s => s.dayOfWeek === dayOfWeek);
     if (daySchedule && daySchedule.intervals) {
       workIntervals = daySchedule.intervals.map(interval => ({
         start: interval.from,
@@ -515,19 +671,12 @@ export function getMasterDailySchedule(
     workIntervals = [{ start: '09:00', end: '18:00' }];
   }
 
-  // Преобразуем breaks из JSON
-  let breaks: Break[] = [];
-  if (master.breaks && typeof master.breaks === 'object') {
-    const breaksData = master.breaks as Array<{
-      from: string;
-      to: string;
-      reason?: string;
-    }>;
-    breaks = breaksData.map(breakItem => ({
-      start: breakItem.from,
-      end: breakItem.to,
-    }));
-  }
+  // Нормализуем и валидируем breaks
+  const normalizedBreaks = normalizeBreaks(master.breaks);
+  const breaks: Break[] = normalizedBreaks.map(breakItem => ({
+    start: breakItem.from,
+    end: breakItem.to,
+  }));
 
   // Получаем настройки с fallback значениями
   const serviceBufferMinutes = master.defaultBufferMinutes ?? 15;
