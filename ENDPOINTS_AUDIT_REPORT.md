@@ -288,3 +288,4 @@ curl -X POST http://localhost:3000/api/me/appointments/<id>/photos \
 **Требуется ручное тестирование для подтверждения корректности работы.**
 
 
+

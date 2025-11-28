@@ -26,6 +26,7 @@ import {
   ServiceInfo,
   WorkInterval,
   Break,
+  isValidBookingTimeForMaster,
 } from '../utils/slotCalculator';
 import { geocodeAndCache } from '../utils/geocoding';
 import { verifyCaptcha } from '../utils/recaptcha';
@@ -181,7 +182,17 @@ export async function bookPublicSlot(req: Request, res: Response) {
   }
 
   try {
-    const master = await prisma.user.findUnique({ where: { slug } });
+    const master = await prisma.user.findUnique({
+      where: { slug },
+      select: {
+        id: true,
+        isActive: true,
+        workSchedule: true,
+        breaks: true,
+        defaultBufferMinutes: true,
+        slotStepMinutes: true,
+      },
+    });
     if (!master) {
       throw new MasterNotFoundError(slug);
     }
@@ -315,11 +326,83 @@ export async function bookPublicSlot(req: Request, res: Response) {
     }
 
     const start = startAt;
+
+    // Валидация времени бронирования с учетом расписания мастера
+    const targetDate = new Date(start);
+    const dayOfWeek = targetDate.getUTCDay();
+
+    // Преобразуем workSchedule из JSON в workIntervals для конкретной даты
+    let workIntervals: WorkInterval[] = [];
+    if (master.workSchedule && typeof master.workSchedule === 'object') {
+      const schedule = master.workSchedule as Array<{
+        dayOfWeek: number;
+        intervals: Array<{ from: string; to: string }>;
+      }>;
+
+      const daySchedule = schedule.find(s => s.dayOfWeek === dayOfWeek);
+      if (daySchedule && daySchedule.intervals) {
+        workIntervals = daySchedule.intervals.map(interval => ({
+          start: interval.from,
+          end: interval.to,
+        }));
+      }
+    }
+
+    // Если workSchedule = null или не найден для этого дня → используем fallback
+    if (workIntervals.length === 0) {
+      workIntervals = [{ start: '09:00', end: '18:00' }];
+    }
+
+    // Преобразуем breaks из JSON
+    let breaks: Break[] = [];
+    if (master.breaks && typeof master.breaks === 'object') {
+      const breaksData = master.breaks as Array<{
+        from: string;
+        to: string;
+        reason?: string;
+      }>;
+      breaks = breaksData.map(breakItem => ({
+        start: breakItem.from,
+        end: breakItem.to,
+      }));
+    }
+
+    // Получаем настройки с fallback значениями
+    const serviceBufferMinutes = master.defaultBufferMinutes ?? 15;
+    const slotStepMinutes = master.slotStepMinutes ?? 15;
+    const timezone = req.timezone || 'Europe/Moscow';
+
+    // Формируем настройки мастера для валидации
+    const masterSettings: MasterSettings = {
+      workIntervals,
+      breaks,
+      serviceBufferMinutes,
+      slotStepMinutes,
+      minServiceDurationMinutes: service.durationMin, // Используем длительность услуги как минимальную
+      timezone,
+      autoBuffer: false, // TODO: получить из настроек мастера в БД
+    };
+
     // Используем кастомную длительность, если указана, иначе длительность услуги
     const duration =
       durationOverride && durationOverride > 0
         ? durationOverride
         : service.durationMin;
+
+    // Валидируем время бронирования
+    const validationResult = isValidBookingTimeForMaster(
+      masterSettings,
+      start,
+      duration
+    );
+
+    if (!validationResult.ok) {
+      return res.status(400).json({
+        error: 'Invalid booking time',
+        message: validationResult.reason,
+      });
+    }
+
     const end = addMinutesToUTC(start, duration);
     // Используем кастомную цену, если указана, иначе цену услуги
     const finalPrice = price && price > 0 ? price : Number(service.price);

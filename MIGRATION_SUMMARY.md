@@ -58,3 +58,4 @@
 Полная документация доступна в файле:
 `MIGRATION_MASTER_SCHEDULE_SETTINGS.md`
 
+

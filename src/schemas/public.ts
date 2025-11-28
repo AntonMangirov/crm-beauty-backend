@@ -1,11 +1,6 @@
 import { z } from 'zod';
 import { isValidISOString } from '../utils/timeUtils';
-import {
-  isValidPhoneFormat,
-  isValidBookingDate,
-  isWorkingHours,
-  isWorkingDay,
-} from '../utils/validation';
+import { isValidPhoneFormat, isValidBookingDate } from '../utils/validation';
 
 // Вспомогательная функция для валидации URL (принимает полные URL или локальные пути)
 const urlOrLocalPath = z.string().refine(
@@ -77,12 +72,6 @@ export const BookingRequestSchema = z
       .refine(date => isValidBookingDate(date), {
         message:
           'Дата записи должна быть минимум через 2 часа и не более чем через 30 дней',
-      })
-      .refine(date => isWorkingHours(date), {
-        message: 'Время записи должно быть в рабочих часах (9:00 - 18:00 UTC)',
-      })
-      .refine(date => isWorkingDay(date), {
-        message: 'Запись возможна только в рабочие дни (понедельник - пятница)',
       }),
     comment: z
       .string()

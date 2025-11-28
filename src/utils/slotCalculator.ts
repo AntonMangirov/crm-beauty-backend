@@ -459,3 +459,140 @@ export function calculateAvailableSlots(
 
   return availableSlots;
 }
+
+/**
+ * Преобразует UTC время в локальное время мастера и получает компоненты даты/времени
+ */
+function getLocalDateTimeComponents(
+  utcDate: Date,
+  timezone: string
+): { dateStr: string; hour: number; minute: number; dayOfWeek: number } {
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: timezone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    weekday: 'long',
+    hour12: false,
+  });
+
+  const parts = formatter.formatToParts(utcDate);
+  const year = parts.find(p => p.type === 'year')!.value;
+  const month = parts.find(p => p.type === 'month')!.value;
+  const day = parts.find(p => p.type === 'day')!.value;
+  const hour = parseInt(parts.find(p => p.type === 'hour')!.value);
+  const minute = parseInt(parts.find(p => p.type === 'minute')!.value);
+  const weekday = parts.find(p => p.type === 'weekday')!.value;
+
+  const dateStr = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+
+  // Преобразуем день недели: Sunday = 0, Monday = 1, ..., Saturday = 6
+  const weekdayMap: Record<string, number> = {
+    Sunday: 0,
+    Monday: 1,
+    Tuesday: 2,
+    Wednesday: 3,
+    Thursday: 4,
+    Friday: 5,
+    Saturday: 6,
+  };
+  const dayOfWeek = weekdayMap[weekday] ?? 0;
+
+  return { dateStr, hour, minute, dayOfWeek };
+}
+
+/**
+ * Валидирует время бронирования для мастера с учетом его расписания
+ *
+ * @param masterSettings - Настройки мастера (расписание, перерывы, буфер и т.д.)
+ * @param startTimeUTC - Время начала записи в UTC
+ * @param serviceDurationMinutes - Длительность услуги в минутах
+ * @param serviceBufferMinutes - Буфер услуги (опционально, если не указан, используется из masterSettings)
+ * @returns Результат валидации: { ok: true } или { ok: false, reason: string }
+ */
+export function isValidBookingTimeForMaster(
+  masterSettings: MasterSettings,
+  startTimeUTC: Date,
+  serviceDurationMinutes: number,
+  serviceBufferMinutes?: number
+): { ok: true } | { ok: false; reason: string } {
+  const {
+    workIntervals,
+    breaks,
+    serviceBufferMinutes: defaultBufferMinutes,
+    timezone,
+  } = masterSettings;
+
+  // Проверяем, что время не в прошлом
+  const now = new Date();
+  if (startTimeUTC <= now) {
+    return {
+      ok: false,
+      reason: 'Время записи не может быть в прошлом',
+    };
+  }
+
+  // Получаем локальные компоненты времени мастера
+  const { dateStr } = getLocalDateTimeComponents(startTimeUTC, timezone);
+
+  // Проверяем, что день - рабочий (есть рабочие интервалы для этого дня)
+  if (workIntervals.length === 0) {
+    return {
+      ok: false,
+      reason: 'Мастер не работает в этот день',
+    };
+  }
+
+  // Вычисляем конец услуги (начало + длительность + буфер)
+  const bufferMinutes = serviceBufferMinutes ?? defaultBufferMinutes;
+  const serviceEndUTC = addMinutesToUTC(
+    startTimeUTC,
+    serviceDurationMinutes + bufferMinutes
+  );
+
+  // Проверяем, что услуга помещается в рабочие интервалы
+  let fitsInWorkInterval = false;
+  for (const workInterval of workIntervals) {
+    const workStartUTC = localTimeToUTC(dateStr, workInterval.start, timezone);
+    const workEndUTC = localTimeToUTC(dateStr, workInterval.end, timezone);
+
+    // Проверяем, что начало услуги внутри рабочего интервала
+    if (startTimeUTC < workStartUTC || startTimeUTC >= workEndUTC) {
+      continue;
+    }
+
+    // Проверяем, что конец услуги (с буфером) тоже внутри рабочего интервала
+    if (serviceEndUTC <= workEndUTC) {
+      fitsInWorkInterval = true;
+      break;
+    }
+  }
+
+  if (!fitsInWorkInterval) {
+    return {
+      ok: false,
+      reason: 'Время записи не попадает в рабочие часы мастера',
+    };
+  }
+
+  // Проверяем перерывы
+  for (const breakItem of breaks) {
+    const breakStartUTC = localTimeToUTC(dateStr, breakItem.start, timezone);
+    const breakEndUTC = localTimeToUTC(dateStr, breakItem.end, timezone);
+
+    // Проверяем, что услуга не пересекается с перерывом
+    if (
+      intervalsOverlap(startTimeUTC, serviceEndUTC, breakStartUTC, breakEndUTC)
+    ) {
+      return {
+        ok: false,
+        reason: 'Время записи попадает на перерыв мастера',
+      };
+    }
+  }
+
+  // Все проверки пройдены
+  return { ok: true };
+}

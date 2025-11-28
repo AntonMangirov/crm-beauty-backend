@@ -5,3 +5,4 @@ ALTER TABLE "Client" ADD COLUMN "telegramUsername" TEXT;
 CREATE INDEX "Client_telegramUsername_idx" ON "Client"("telegramUsername");
 
 
+
