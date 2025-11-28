@@ -3,7 +3,12 @@
  * Реализует логику выбора времени как в YClients/Fresha
  */
 
-import { addMinutesToUTC, getMinutesDifference } from './timeUtils';
+import {
+  addMinutesToUTC,
+  getMinutesDifference,
+  convertUTCToMasterTZ,
+  convertMasterTZToUTC,
+} from './timeUtils';
 
 export interface WorkInterval {
   start: string; // Формат "HH:mm" в локальном времени мастера
@@ -45,62 +50,6 @@ export interface MasterWithSchedule {
   breaks: unknown; // JSON из БД: Array<{ from: string, to: string, reason?: string }>
   defaultBufferMinutes: number | null;
   slotStepMinutes: number | null;
-}
-
-/**
- * Преобразует локальное время (HH:mm) в UTC Date для указанной даты
- * Использует правильное преобразование с учетом часового пояса мастера
- */
-function localTimeToUTC(
-  dateStr: string,
-  timeStr: string,
-  timezone: string
-): Date {
-  // Парсим дату (YYYY-MM-DD)
-  const [year, month, day] = dateStr.split('-').map(Number);
-
-  // Парсим время (HH:mm)
-  const [hours, minutes] = timeStr.split(':').map(Number);
-
-  // Создаем строку даты и времени
-  const dateTimeStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}T${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:00`;
-
-  // Используем итеративный подход для нахождения правильной UTC даты
-  // Начинаем с предположения, что это UTC время
-  let candidateUTC = new Date(dateTimeStr + 'Z');
-
-  // Итеративно корректируем до тех пор, пока локальное время мастера не совпадет с желаемым
-  for (let i = 0; i < 10; i++) {
-    // Получаем локальное время мастера для этой UTC даты
-    const formatter = new Intl.DateTimeFormat('en-US', {
-      timeZone: timezone,
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: false,
-    });
-
-    const parts = formatter.formatToParts(candidateUTC);
-    const masterHour = parseInt(parts.find(p => p.type === 'hour')!.value);
-    const masterMinute = parseInt(parts.find(p => p.type === 'minute')!.value);
-
-    // Вычисляем разницу в минутах
-    const desiredMinutes = hours * 60 + minutes;
-    const actualMinutes = masterHour * 60 + masterMinute;
-    const diffMinutes = desiredMinutes - actualMinutes;
-
-    // Если разница очень мала, возвращаем результат
-    if (Math.abs(diffMinutes) < 1) {
-      break;
-    }
-
-    // Корректируем UTC дату
-    candidateUTC = new Date(candidateUTC.getTime() + diffMinutes * 60 * 1000);
-  }
-
-  return candidateUTC;
 }
 
 /**
@@ -239,8 +188,8 @@ function mergeBusyIntervals(
 
   // Добавляем перерывы мастера
   for (const breakItem of breaks) {
-    const breakStart = localTimeToUTC(dateStr, breakItem.start, timezone);
-    const breakEnd = localTimeToUTC(dateStr, breakItem.end, timezone);
+    const breakStart = convertMasterTZToUTC(dateStr, breakItem.start, timezone);
+    const breakEnd = convertMasterTZToUTC(dateStr, breakItem.end, timezone);
     intervals.push({ start: breakStart, end: breakEnd });
   }
 
@@ -363,8 +312,8 @@ export function calculateAvailableSlots(
 
   // Обрабатываем каждый рабочий интервал
   for (const workInterval of workIntervals) {
-    const workStart = localTimeToUTC(date, workInterval.start, timezone);
-    const workEnd = localTimeToUTC(date, workInterval.end, timezone);
+    const workStart = convertMasterTZToUTC(date, workInterval.start, timezone);
+    const workEnd = convertMasterTZToUTC(date, workInterval.end, timezone);
 
     // Если рабочий интервал в прошлом, пропускаем
     if (workEnd <= now) {
@@ -648,7 +597,7 @@ export function getMasterDailySchedule(
     typeof date === 'string' ? new Date(date + 'T00:00:00.000Z') : date;
 
   // Получаем день недели в часовом поясе мастера
-  const { dayOfWeek } = getLocalDateTimeComponents(dateObj, timezone);
+  const { dayOfWeek } = convertUTCToMasterTZ(dateObj, timezone);
 
   // Нормализуем и валидируем workSchedule
   const normalizedSchedule = normalizeWorkSchedule(master.workSchedule);
@@ -698,49 +647,6 @@ export function getMasterDailySchedule(
 }
 
 /**
- * Преобразует UTC время в локальное время мастера и получает компоненты даты/времени
- */
-function getLocalDateTimeComponents(
-  utcDate: Date,
-  timezone: string
-): { dateStr: string; hour: number; minute: number; dayOfWeek: number } {
-  const formatter = new Intl.DateTimeFormat('en-US', {
-    timeZone: timezone,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    weekday: 'long',
-    hour12: false,
-  });
-
-  const parts = formatter.formatToParts(utcDate);
-  const year = parts.find(p => p.type === 'year')!.value;
-  const month = parts.find(p => p.type === 'month')!.value;
-  const day = parts.find(p => p.type === 'day')!.value;
-  const hour = parseInt(parts.find(p => p.type === 'hour')!.value);
-  const minute = parseInt(parts.find(p => p.type === 'minute')!.value);
-  const weekday = parts.find(p => p.type === 'weekday')!.value;
-
-  const dateStr = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
-
-  // Преобразуем день недели: Sunday = 0, Monday = 1, ..., Saturday = 6
-  const weekdayMap: Record<string, number> = {
-    Sunday: 0,
-    Monday: 1,
-    Tuesday: 2,
-    Wednesday: 3,
-    Thursday: 4,
-    Friday: 5,
-    Saturday: 6,
-  };
-  const dayOfWeek = weekdayMap[weekday] ?? 0;
-
-  return { dateStr, hour, minute, dayOfWeek };
-}
-
-/**
  * Валидирует время бронирования для мастера с учетом его расписания
  *
  * @param masterSettings - Настройки мастера (расписание, перерывы, буфер и т.д.)
@@ -772,7 +678,7 @@ export function isValidBookingTimeForMaster(
   }
 
   // Получаем локальные компоненты времени мастера
-  const { dateStr } = getLocalDateTimeComponents(startTimeUTC, timezone);
+  const { dateStr } = convertUTCToMasterTZ(startTimeUTC, timezone);
 
   // Проверяем, что день - рабочий (есть рабочие интервалы для этого дня)
   if (workIntervals.length === 0) {
@@ -792,8 +698,16 @@ export function isValidBookingTimeForMaster(
   // Проверяем, что услуга помещается в рабочие интервалы
   let fitsInWorkInterval = false;
   for (const workInterval of workIntervals) {
-    const workStartUTC = localTimeToUTC(dateStr, workInterval.start, timezone);
-    const workEndUTC = localTimeToUTC(dateStr, workInterval.end, timezone);
+    const workStartUTC = convertMasterTZToUTC(
+      dateStr,
+      workInterval.start,
+      timezone
+    );
+    const workEndUTC = convertMasterTZToUTC(
+      dateStr,
+      workInterval.end,
+      timezone
+    );
 
     // Проверяем, что начало услуги внутри рабочего интервала
     if (startTimeUTC < workStartUTC || startTimeUTC >= workEndUTC) {
@@ -816,8 +730,12 @@ export function isValidBookingTimeForMaster(
 
   // Проверяем перерывы
   for (const breakItem of breaks) {
-    const breakStartUTC = localTimeToUTC(dateStr, breakItem.start, timezone);
-    const breakEndUTC = localTimeToUTC(dateStr, breakItem.end, timezone);
+    const breakStartUTC = convertMasterTZToUTC(
+      dateStr,
+      breakItem.start,
+      timezone
+    );
+    const breakEndUTC = convertMasterTZToUTC(dateStr, breakItem.end, timezone);
 
     // Проверяем, что услуга не пересекается с перерывом
     if (
