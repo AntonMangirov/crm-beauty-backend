@@ -386,14 +386,155 @@ export async function bookPublicSlot(req: Request, res: Response) {
 
       if (!client) {
         // Создаем нового клиента
-        client = await tx.client.create({
-          data: {
-            masterId: master.id,
-            name,
-            phone: normalizedPhone,
-            telegramUsername: normalizedTelegramUsername,
-          },
-        });
+        // Если имя не указано, используем прочерк
+        const clientName = name && name.trim() ? name.trim() : '-';
+
+        // Если у нового клиента есть и телефон, и Telegram ID, проверяем дубликаты
+        // Может быть ситуация: есть клиент A с телефоном и клиент B с Telegram ID
+        // Нужно их объединить
+        if (normalizedPhone && normalizedTelegramUsername) {
+          // Ищем клиентов с совпадающим телефоном или Telegram ID
+          const potentialDuplicates = await tx.client.findMany({
+            where: {
+              masterId: master.id,
+              OR: [
+                { phone: normalizedPhone },
+                { telegramUsername: normalizedTelegramUsername },
+              ],
+              isActive: true,
+            },
+          });
+
+          if (potentialDuplicates.length > 0) {
+            // Используем первого найденного клиента как основного
+            client = potentialDuplicates[0];
+
+            // Обновляем его данными из новой записи
+            const updateData: {
+              name?: string;
+              phone?: string;
+              telegramUsername?: string;
+            } = {};
+            if (!client.name || client.name === '-') {
+              updateData.name = clientName;
+            }
+            if (!client.phone && normalizedPhone) {
+              updateData.phone = normalizedPhone;
+            }
+            if (!client.telegramUsername && normalizedTelegramUsername) {
+              updateData.telegramUsername = normalizedTelegramUsername;
+            }
+
+            if (Object.keys(updateData).length > 0) {
+              await tx.client.update({
+                where: { id: client.id },
+                data: updateData,
+              });
+              client = await tx.client.findUnique({
+                where: { id: client.id },
+              });
+              if (!client) {
+                throw new Error('Client not found after update');
+              }
+            }
+
+            // Объединяем остальных дубликатов с основным клиентом
+            for (let i = 1; i < potentialDuplicates.length; i++) {
+              const duplicate = potentialDuplicates[i];
+
+              // Переносим все записи
+              await tx.appointment.updateMany({
+                where: { clientId: duplicate.id },
+                data: { clientId: client.id },
+              });
+
+              // Переносим все фотографии
+              await tx.photo.updateMany({
+                where: { clientId: duplicate.id },
+                data: { clientId: client.id },
+              });
+
+              // Объединяем данные
+              const mergeData: {
+                name?: string;
+                phone?: string;
+                telegramUsername?: string;
+                email?: string;
+                allergies?: string;
+                notes?: string;
+              } = {};
+
+              if (
+                duplicate.name &&
+                duplicate.name !== '-' &&
+                (!client.name || client.name === '-')
+              ) {
+                mergeData.name = duplicate.name;
+              }
+              if (!client.phone && duplicate.phone) {
+                mergeData.phone = duplicate.phone;
+              }
+              if (!client.telegramUsername && duplicate.telegramUsername) {
+                mergeData.telegramUsername = duplicate.telegramUsername;
+              }
+              if (!client.email && duplicate.email) {
+                mergeData.email = duplicate.email;
+              }
+              if (
+                duplicate.allergies &&
+                (!client.allergies ||
+                  client.allergies.length < duplicate.allergies.length)
+              ) {
+                mergeData.allergies = duplicate.allergies;
+              }
+              if (
+                duplicate.notes &&
+                (!client.notes || client.notes.length < duplicate.notes.length)
+              ) {
+                mergeData.notes = duplicate.notes;
+              }
+
+              if (Object.keys(mergeData).length > 0) {
+                await tx.client.update({
+                  where: { id: client.id },
+                  data: mergeData,
+                });
+                client = await tx.client.findUnique({
+                  where: { id: client.id },
+                });
+                if (!client) {
+                  throw new Error('Client not found after merge');
+                }
+              }
+
+              // Деактивируем дубликат
+              await tx.client.update({
+                where: { id: duplicate.id },
+                data: { isActive: false },
+              });
+            }
+          } else {
+            // Нет дубликатов, создаем нового клиента
+            client = await tx.client.create({
+              data: {
+                masterId: master.id,
+                name: clientName,
+                phone: normalizedPhone,
+                telegramUsername: normalizedTelegramUsername,
+              },
+            });
+          }
+        } else {
+          // У нового клиента только телефон или только Telegram ID, создаем нового
+          client = await tx.client.create({
+            data: {
+              masterId: master.id,
+              name: clientName,
+              phone: normalizedPhone,
+              telegramUsername: normalizedTelegramUsername,
+            },
+          });
+        }
       } else {
         // Обновляем существующего клиента
         const updateData: {
@@ -415,6 +556,138 @@ export async function bookPublicSlot(req: Request, res: Response) {
             where: { id: client.id },
             data: updateData,
           });
+          // Обновляем объект клиента для дальнейшего использования
+          client = await tx.client.findUnique({
+            where: { id: client.id },
+          });
+          if (!client) {
+            throw new Error('Client not found after update');
+          }
+        }
+
+        // Проверяем наличие дубликатов после обновления
+        // Если у клиента теперь есть и телефон, и Telegram ID, проверяем дубликаты
+        const finalPhone = client.phone || normalizedPhone;
+        const finalTelegram =
+          client.telegramUsername || normalizedTelegramUsername;
+
+        if (finalPhone && finalTelegram) {
+          // Ищем клиентов с совпадающим вторым полем
+          // Если нашли клиента по телефону, ищем по Telegram
+          // Если нашли клиента по Telegram, ищем по телефону
+          const duplicateConditions: Array<
+            { phone: string } | { telegramUsername: string }
+          > = [];
+
+          // Если текущий клиент был найден по телефону, ищем дубликаты по Telegram
+          if (
+            normalizedPhone &&
+            client.phone === normalizedPhone &&
+            finalTelegram
+          ) {
+            duplicateConditions.push({ telegramUsername: finalTelegram });
+          }
+          // Если текущий клиент был найден по Telegram, ищем дубликаты по телефону
+          if (
+            normalizedTelegramUsername &&
+            client.telegramUsername === normalizedTelegramUsername &&
+            finalPhone
+          ) {
+            duplicateConditions.push({ phone: finalPhone });
+          }
+
+          if (duplicateConditions.length > 0) {
+            const duplicates = await tx.client.findMany({
+              where: {
+                masterId: master.id,
+                id: { not: client.id }, // Исключаем текущего клиента
+                OR: duplicateConditions,
+                isActive: true,
+              },
+            });
+
+            // Объединяем всех найденных дубликатов с текущим клиентом
+            for (const duplicate of duplicates) {
+              // Переносим все записи от дубликата к основному клиенту
+              await tx.appointment.updateMany({
+                where: { clientId: duplicate.id },
+                data: { clientId: client.id },
+              });
+
+              // Переносим все фотографии от дубликата к основному клиенту
+              await tx.photo.updateMany({
+                where: { clientId: duplicate.id },
+                data: { clientId: client.id },
+              });
+
+              // Объединяем данные: берем непустые значения из дубликата
+              const mergeData: {
+                name?: string;
+                phone?: string;
+                telegramUsername?: string;
+                email?: string;
+                allergies?: string;
+                notes?: string;
+              } = {};
+
+              // Имя: берем более информативное (не прочерк)
+              if (
+                duplicate.name &&
+                duplicate.name !== '-' &&
+                (!client.name || client.name === '-')
+              ) {
+                mergeData.name = duplicate.name;
+              }
+              // Телефон: если у основного клиента нет, берем из дубликата
+              if (!client.phone && duplicate.phone) {
+                mergeData.phone = duplicate.phone;
+              }
+              // Telegram: если у основного клиента нет, берем из дубликата
+              if (!client.telegramUsername && duplicate.telegramUsername) {
+                mergeData.telegramUsername = duplicate.telegramUsername;
+              }
+              // Email: если у основного клиента нет, берем из дубликата
+              if (!client.email && duplicate.email) {
+                mergeData.email = duplicate.email;
+              }
+              // Аллергии: объединяем (если есть у обоих, берем более полную)
+              if (
+                duplicate.allergies &&
+                (!client.allergies ||
+                  client.allergies.length < duplicate.allergies.length)
+              ) {
+                mergeData.allergies = duplicate.allergies;
+              }
+              // Заметки: объединяем (если есть у обоих, берем более полную)
+              if (
+                duplicate.notes &&
+                (!client.notes || client.notes.length < duplicate.notes.length)
+              ) {
+                mergeData.notes = duplicate.notes;
+              }
+
+              // Обновляем основного клиента данными из дубликата
+              if (Object.keys(mergeData).length > 0) {
+                await tx.client.update({
+                  where: { id: client.id },
+                  data: mergeData,
+                });
+                // Обновляем объект клиента
+                client = await tx.client.findUnique({
+                  where: { id: client.id },
+                });
+                if (!client) {
+                  throw new Error('Client not found after merge');
+                }
+              }
+
+              // Деактивируем дубликат (не удаляем, чтобы сохранить историю создания)
+              await tx.client.update({
+                where: { id: duplicate.id },
+                data: { isActive: false },
+              });
+            }
+          }
         }
       }
 
