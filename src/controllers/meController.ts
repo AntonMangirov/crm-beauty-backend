@@ -987,6 +987,78 @@ export async function getClientHistory(req: Request, res: Response) {
 }
 
 /**
+ * Обновить данные клиента
+ */
+export async function updateClient(req: Request, res: Response) {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const { id: clientId } = req.params;
+    if (!clientId) {
+      return res.status(400).json({ error: 'Client ID is required' });
+    }
+
+    const { UpdateClientSchema } = await import('../schemas/me');
+    const validatedData = UpdateClientSchema.parse(req.body);
+
+    // Проверяем, что клиент принадлежит мастеру
+    const client = await prisma.client.findFirst({
+      where: {
+        id: clientId,
+        masterId: userId,
+      },
+    });
+
+    if (!client) {
+      return res.status(404).json({ error: 'Client not found' });
+    }
+
+    // Обновляем клиента
+    const updateData: Prisma.ClientUpdateInput = {};
+    if (validatedData.name !== undefined) {
+      // Если имя пустое или только пробелы, ставим прочерк
+      updateData.name = validatedData.name.trim() || '-';
+    }
+
+    const updatedClient = await prisma.client.update({
+      where: { id: clientId },
+      data: updateData,
+      select: {
+        id: true,
+        name: true,
+        phone: true,
+        telegramUsername: true,
+        email: true,
+        allergies: true,
+        notes: true,
+        isActive: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
+
+    return res.json(updatedClient);
+  } catch (error) {
+    logError('Ошибка обновления клиента', error);
+
+    if (error instanceof Error && error.name === 'ZodError') {
+      return res.status(400).json({
+        error: 'Validation error',
+        details: error.message,
+      });
+    }
+
+    return res.status(500).json({
+      error: 'Failed to update client',
+      message: error instanceof Error ? error.message : 'Unknown error',
+    });
+  }
+}
+
+/**
  * Загрузить фото к записи
  */
 export async function uploadAppointmentPhotos(req: Request, res: Response) {

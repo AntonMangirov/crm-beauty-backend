@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { auth } from '../middleware/auth';
 import { validate } from '../middleware/validate';
-import { UpdateScheduleSchema } from '../schemas/me';
+import { UpdateScheduleSchema, UpdateClientSchema } from '../schemas/me';
 import {
   getMe,
   updateProfile,
@@ -10,6 +10,7 @@ import {
   updateAppointmentStatus,
   getClients,
   getClientHistory,
+  updateClient,
   uploadAppointmentPhotos,
   deleteAppointmentPhoto,
   getAnalytics,
@@ -71,6 +72,13 @@ router.get('/clients', getClients);
 
 // GET /api/me/clients/:id/history - получить историю посещений клиента
 router.get('/clients/:id/history', getClientHistory);
+
+// PATCH /api/me/clients/:id - обновить данные клиента
+router.patch(
+  '/clients/:id',
+  validate({ body: UpdateClientSchema }),
+  updateClient
+);
 
 // GET /api/me/services - получить все услуги мастера
 router.get('/services', getServices);

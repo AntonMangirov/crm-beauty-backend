@@ -190,6 +190,17 @@ export const ClientListItemSchema = z.object({
 
 export type ClientListItem = z.infer<typeof ClientListItemSchema>;
 
+// Схема для обновления клиента
+export const UpdateClientSchema = z.object({
+  name: z
+    .string()
+    .min(1, 'Имя обязательно')
+    .max(100, 'Имя слишком длинное')
+    .optional(),
+});
+
+export type UpdateClientRequest = z.infer<typeof UpdateClientSchema>;
+
 // Схема для ответа истории клиента
 export const ClientHistoryItemSchema = z.object({
   id: z.string(),
