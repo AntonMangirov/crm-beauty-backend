@@ -1,0 +1,223 @@
+# 🔒 Защищённые эндпоинты
+
+Документация по всем защищённым эндпоинтам API и их проверке.
+
+## Обзор
+
+Все защищённые эндпоинты требуют валидный JWT access token в заголовке `Authorization`:
+```
+Authorization: Bearer <access_token>
+```
+
+Access token имеет срок жизни **15 минут**. При истечении токена фронтенд автоматически обновляет его через `/api/auth/refresh`, используя refresh token из HttpOnly cookie.
+
+## Список защищённых эндпоинтов
+
+### 🔐 Аутентификация (`/api/auth`)
+
+| Метод | Путь | Описание | Требует Auth |
+|-------|------|----------|--------------|
+| POST | `/api/auth/register` | Регистрация нового пользователя | ❌ |
+| POST | `/api/auth/login` | Вход в систему | ❌ |
+| POST | `/api/auth/refresh` | Обновление access token | ❌ (использует cookie) |
+| POST | `/api/auth/logout` | Выход из системы | ❌ (использует cookie) |
+| GET | `/api/auth/me` | Получение профиля текущего пользователя | ✅ |
+
+### 👤 Личный кабинет мастера (`/api/me`)
+
+Все эндпоинты в этом разделе требуют авторизацию через `router.use(auth)`.
+
+| Метод | Путь | Описание |
+|-------|------|----------|
+| GET | `/api/me` | Полная информация о мастере |
+| GET | `/api/me/appointments` | Список записей мастера |
+| GET | `/api/me/clients` | Список клиентов мастера |
+| GET | `/api/me/clients/:id/history` | История посещений клиента |
+| GET | `/api/me/services` | Список услуг мастера |
+| GET | `/api/me/services/:id` | Получение услуги по ID |
+| GET | `/api/me/analytics` | Аналитика за текущий месяц |
+| PATCH | `/api/me/profile` | Обновление профиля мастера |
+| POST | `/api/me/profile/upload-photo` | Загрузка фото профиля |
+| POST | `/api/me/services` | Создание новой услуги |
+| PATCH | `/api/me/services/:id` | Обновление услуги |
+| DELETE | `/api/me/services/:id` | Удаление услуги |
+| PUT | `/api/me/appointments/:id` | Обновление статуса записи |
+| POST | `/api/me/appointments/:id/photos` | Загрузка фото к записи |
+| DELETE | `/api/me/appointments/:id/photos/:photoId` | Удаление фото из записи |
+
+### 🛠️ Услуги (`/api/services`)
+
+Все эндпоинты в этом разделе требуют авторизацию через `router.use(auth)`.
+
+| Метод | Путь | Описание |
+|-------|------|----------|
+| GET | `/api/services` | Получение всех услуг мастера |
+| POST | `/api/services` | Создание новой услуги |
+| GET | `/api/services/:id` | Получение услуги по ID |
+| PATCH | `/api/services/:id` | Обновление услуги |
+| DELETE | `/api/services/:id` | Удаление услуги |
+
+### 👥 Пользователи (`/api/users`)
+
+| Метод | Путь | Описание | Требует Auth |
+|-------|------|----------|--------------|
+| GET | `/api/users` | Список всех пользователей | ✅ |
+
+## Публичные эндпоинты (не требуют авторизацию)
+
+| Метод | Путь | Описание |
+|-------|------|----------|
+| GET | `/api/health` | Проверка здоровья сервера |
+| GET | `/api/db/status` | Статус подключения к БД |
+| GET | `/api/public/:slug` | Публичный профиль мастера |
+| GET | `/api/public/:slug/timeslots` | Доступные временные слоты |
+| POST | `/api/public/:slug/book` | Создание записи через публичный API |
+
+## Проверка защищённых эндпоинтов
+
+### Автоматические тесты
+
+Запуск тестов для проверки всех защищённых эндпоинтов:
+
+```bash
+npm test -- protected-endpoints.test.ts
+```
+
+Тесты проверяют:
+- ✅ Все защищённые эндпоинты возвращают 401 без токена
+- ✅ Все защищённые эндпоинты возвращают 401 с невалидным токеном
+- ✅ Все защищённые эндпоинты возвращают 401 с истёкшим токеном
+- ✅ Все защищённые эндпоинты работают с валидным токеном
+- ✅ Публичные эндпоинты не требуют авторизацию
+
+### Ручная проверка
+
+Использование скрипта для ручной проверки:
+
+```bash
+# Установить переменные окружения (опционально)
+export TEST_EMAIL=anna@example.com
+export TEST_PASSWORD=password123
+export API_URL=http://localhost:3000
+
+# Запустить проверку
+ts-node scripts/check-protected-endpoints.ts
+```
+
+Скрипт проверит:
+- Все защищённые эндпоинты без токена
+- Все защищённые эндпоинты с валидным токеном
+- Все защищённые эндпоинты с невалидным токеном
+- Публичные эндпоинты
+
+## Middleware авторизации
+
+Все защищённые эндпоинты используют middleware `auth` из `src/middleware/auth.ts`:
+
+```typescript
+export const auth = (req: Request, res: Response, next: NextFunction) => {
+  const header = req.headers.authorization;
+  if (!header || !header.startsWith('Bearer ')) {
+    return res.status(401).json({ error: 'Authorization header missing' });
+  }
+  const token = header.split(' ')[1];
+  try {
+    const payload = jwt.verify(
+      token,
+      process.env.JWT_SECRET as string
+    ) as JwtPayload;
+    req.user = { id: payload.userId };
+    next();
+  } catch {
+    return res.status(401).json({ error: 'Invalid or expired token' });
+  }
+};
+```
+
+### Поведение middleware:
+
+1. **Отсутствует заголовок Authorization**: возвращает 401 с сообщением "Authorization header missing"
+2. **Неправильный формат заголовка**: возвращает 401 с сообщением "Authorization header missing"
+3. **Невалидный токен**: возвращает 401 с сообщением "Invalid or expired token"
+4. **Истёкший токен**: возвращает 401 с сообщением "Invalid or expired token"
+5. **Валидный токен**: добавляет `req.user = { id: userId }` и вызывает `next()`
+
+## Автоматическое обновление токена
+
+Фронтенд автоматически обновляет access token при получении 401 ошибки:
+
+1. Перехватывает ответ с кодом 401
+2. Вызывает `/api/auth/refresh` с refresh token из cookie
+3. Получает новый access token
+4. Повторяет оригинальный запрос с новым токеном
+
+Это реализовано в `crm-beauty-frontend/src/api/index.ts` через axios interceptors.
+
+## Безопасность
+
+### Access Token
+- **Срок жизни**: 15 минут
+- **Хранение**: localStorage (фронтенд)
+- **Использование**: В заголовке `Authorization: Bearer <token>`
+
+### Refresh Token
+- **Срок жизни**: 7 дней
+- **Хранение**: HttpOnly cookie (безопаснее, чем localStorage)
+- **Использование**: Автоматически отправляется с каждым запросом
+- **Обновление**: При каждом логине создаётся новый refresh token
+
+### Защита от атак
+
+1. **XSS**: Refresh token в HttpOnly cookie недоступен для JavaScript
+2. **CSRF**: Используется `sameSite: 'strict'` для cookie
+3. **Token Rotation**: При каждом логине создаётся новый refresh token
+4. **Token Revocation**: При logout refresh token удаляется из БД
+
+## Примеры использования
+
+### Получение профиля
+
+```bash
+curl -X GET http://localhost:3000/api/auth/me \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
+```
+
+### Получение списка услуг
+
+```bash
+curl -X GET http://localhost:3000/api/services \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
+```
+
+### Обновление токена
+
+```bash
+curl -X POST http://localhost:3000/api/auth/refresh \
+  -H "Content-Type: application/json" \
+  --cookie "refreshToken=YOUR_REFRESH_TOKEN"
+```
+
+## Отладка
+
+Если эндпоинт возвращает 401:
+
+1. Проверьте наличие заголовка `Authorization: Bearer <token>`
+2. Проверьте, что токен не истёк (срок жизни 15 минут)
+3. Проверьте формат токена (должен быть валидным JWT)
+4. Попробуйте обновить токен через `/api/auth/refresh`
+5. Проверьте логи сервера для деталей ошибки
+
+## Обновление списка
+
+При добавлении новых защищённых эндпоинтов:
+
+1. Добавьте эндпоинт в соответствующий файл роутов
+2. Убедитесь, что используется middleware `auth`
+3. Добавьте тест в `protected-endpoints.test.ts`
+4. Обновите этот документ
+
+
+
+
+
+

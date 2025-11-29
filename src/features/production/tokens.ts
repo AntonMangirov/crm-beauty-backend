@@ -9,7 +9,7 @@
  * - generateRefreshToken(): Refresh token для долгосрочной аутентификации
  * - createPasswordResetToken(): Токен сброса с истечением через 1 час
  * - createRefreshToken(): Refresh token с истечением через 7 дней
- * - createAccessToken(): Access token с истечением через 15 минут
+ * - getAccessTokenExpiration(): Получение времени истечения access token (15 минут)
  * - isTokenExpired(): Проверка истечения токена
  *
  * Когда использовать:
@@ -61,9 +61,10 @@ export function createRefreshToken(): { token: string; expiresAt: Date } {
 }
 
 // Создание access token с истечением через 15 минут
-export function createAccessToken(): { token: string; expiresAt: Date } {
+// Примечание: Access token создаётся через jwt.sign() в контроллерах
+// Эта функция возвращает только информацию о сроке действия
+export function getAccessTokenExpiration(): Date {
   const expiresAt = new Date();
   expiresAt.setMinutes(expiresAt.getMinutes() + 15); // истекает через 15 минут
-
-  return { expiresAt };
+  return expiresAt;
 }

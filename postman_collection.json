@@ -1,0 +1,325 @@
+{
+  "info": {
+    "name": "CRM Beauty Backend - Public API",
+    "description": "Коллекция для тестирования публичного API бронирования",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3000",
+      "type": "string"
+    },
+    {
+      "key": "masterSlug",
+      "value": "anna-krasotkina",
+      "type": "string"
+    },
+    {
+      "key": "serviceId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "recaptchaToken",
+      "value": "test-token",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Public Profile",
+      "item": [
+        {
+          "name": "Get Master Profile",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/public/{{masterSlug}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "public", "{{masterSlug}}"]
+            },
+            "description": "Получить публичный профиль мастера"
+          }
+        },
+        {
+          "name": "Get Timeslots",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/public/{{masterSlug}}/timeslots?date=2025-11-06&serviceId={{serviceId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "public", "{{masterSlug}}", "timeslots"],
+              "query": [
+                {
+                  "key": "date",
+                  "value": "2025-11-06",
+                  "description": "Дата в формате YYYY-MM-DD (опционально)"
+                },
+                {
+                  "key": "serviceId",
+                  "value": "{{serviceId}}",
+                  "description": "ID услуги для учёта длительности (опционально)"
+                }
+              ]
+            },
+            "description": "Получить доступные временные слоты"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Booking",
+      "item": [
+        {
+          "name": "Valid Booking",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Иван Иванов\",\n  \"phone\": \"+79991234567\",\n  \"serviceId\": \"{{serviceId}}\",\n  \"startAt\": \"2025-11-06T13:00:00.000Z\",\n  \"comment\": \"Тестовая запись\",\n  \"recaptchaToken\": \"{{recaptchaToken}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/public/{{masterSlug}}/book",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "public", "{{masterSlug}}", "book"]
+            },
+            "description": "Валидная запись к мастеру"
+          }
+        },
+        {
+          "name": "Invalid Service ID",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Иван Иванов\",\n  \"phone\": \"+79991234567\",\n  \"serviceId\": \"invalid-service-id-12345\",\n  \"startAt\": \"2025-11-06T13:00:00.000Z\",\n  \"comment\": \"Тест неверного serviceId\",\n  \"recaptchaToken\": \"{{recaptchaToken}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/public/{{masterSlug}}/book",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "public", "{{masterSlug}}", "book"]
+            },
+            "description": "Тест с неверным serviceId - должна вернуться ошибка 400"
+          }
+        },
+        {
+          "name": "Time Slot Conflict",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Петр Петров\",\n  \"phone\": \"+79991234568\",\n  \"serviceId\": \"{{serviceId}}\",\n  \"startAt\": \"2025-11-06T13:00:00.000Z\",\n  \"comment\": \"Попытка записаться на занятое время\",\n  \"recaptchaToken\": \"{{recaptchaToken}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/public/{{masterSlug}}/book",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "public", "{{masterSlug}}", "book"]
+            },
+            "description": "Тест конфликта времени - попытка записаться на уже занятое время. Должна вернуться ошибка 409"
+          }
+        },
+        {
+          "name": "Invalid Date Format",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Сидор Сидоров\",\n  \"phone\": \"+79991234569\",\n  \"serviceId\": \"{{serviceId}}\",\n  \"startAt\": \"2025-11-06 13:00:00\",\n  \"comment\": \"Неверный формат даты\",\n  \"recaptchaToken\": \"{{recaptchaToken}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/public/{{masterSlug}}/book",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "public", "{{masterSlug}}", "book"]
+            },
+            "description": "Тест с неверным форматом даты - должна вернуться ошибка валидации 400"
+          }
+        },
+        {
+          "name": "Invalid Phone Format",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Тест Тестов\",\n  \"phone\": \"123\",\n  \"serviceId\": \"{{serviceId}}\",\n  \"startAt\": \"2025-11-06T13:00:00.000Z\",\n  \"comment\": \"Неверный формат телефона\",\n  \"recaptchaToken\": \"{{recaptchaToken}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/public/{{masterSlug}}/book",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "public", "{{masterSlug}}", "book"]
+            },
+            "description": "Тест с неверным форматом телефона - должна вернуться ошибка 400"
+          }
+        },
+        {
+          "name": "Past Date",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Прошлое Время\",\n  \"phone\": \"+79991234570\",\n  \"serviceId\": \"{{serviceId}}\",\n  \"startAt\": \"2020-01-01T10:00:00.000Z\",\n  \"comment\": \"Попытка записаться в прошлое\",\n  \"recaptchaToken\": \"{{recaptchaToken}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/public/{{masterSlug}}/book",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "public", "{{masterSlug}}", "book"]
+            },
+            "description": "Тест с датой в прошлом - должна вернуться ошибка валидации 400"
+          }
+        },
+        {
+          "name": "Weekend Date",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Выходной День\",\n  \"phone\": \"+79991234571\",\n  \"serviceId\": \"{{serviceId}}\",\n  \"startAt\": \"2025-11-08T13:00:00.000Z\",\n  \"comment\": \"Попытка записаться на выходной (суббота)\",\n  \"recaptchaToken\": \"{{recaptchaToken}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/public/{{masterSlug}}/book",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "public", "{{masterSlug}}", "book"]
+            },
+            "description": "Тест с датой на выходной день - должна вернуться ошибка валидации 400"
+          }
+        },
+        {
+          "name": "Outside Working Hours",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Вне Рабочих Часов\",\n  \"phone\": \"+79991234572\",\n  \"serviceId\": \"{{serviceId}}\",\n  \"startAt\": \"2025-11-06T20:00:00.000Z\",\n  \"comment\": \"Попытка записаться вне рабочих часов (после 18:00 UTC)\",\n  \"recaptchaToken\": \"{{recaptchaToken}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/public/{{masterSlug}}/book",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "public", "{{masterSlug}}", "book"]
+            },
+            "description": "Тест с временем вне рабочих часов - должна вернуться ошибка валидации 400"
+          }
+        },
+        {
+          "name": "Missing reCAPTCHA Token",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Без Капчи\",\n  \"phone\": \"+79991234573\",\n  \"serviceId\": \"{{serviceId}}\",\n  \"startAt\": \"2025-11-06T13:00:00.000Z\",\n  \"comment\": \"Запрос без reCAPTCHA токена\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/public/{{masterSlug}}/book",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "public", "{{masterSlug}}", "book"]
+            },
+            "description": "Тест без reCAPTCHA токена - должна вернуться ошибка валидации 400"
+          }
+        }
+      ]
+    }
+  ]
+}
+
+
+

@@ -2,11 +2,12 @@ import { Request, Response } from 'express';
 import { Prisma } from '@prisma/client';
 import { ZodError } from 'zod';
 import { AppError } from '../errors/AppError';
+import { logError } from '../utils/logger';
 
 interface ErrorResponse {
   error: string;
   code?: string;
-  details?: any;
+  details?: unknown;
   timestamp: string;
   path: string;
   serverTime?: string;
@@ -16,20 +17,30 @@ interface ErrorResponse {
 export const errorHandler = (
   error: Error,
   req: Request,
-  res: Response
+  res: Response,
+  // eslint-disable-next-line no-unused-vars
+  next?: (_err: Error) => void
 ): void => {
+  // Если ответ уже был отправлен, передаем ошибку дальше
+  if (res.headersSent) {
+    if (next) {
+      return next(error);
+    }
+    return;
+  }
+
   let statusCode = 500;
   let message = 'Internal Server Error';
   let code: string | undefined;
-  let details: any = undefined;
+  let details: unknown = undefined;
 
-  // Логируем ошибку
-  console.error('Error occurred:', {
-    message: error.message,
-    stack: error.stack,
+  // Логируем ошибку в файл
+  logError('Ошибка обработки запроса', error, {
     url: req.url,
     method: req.method,
-    timestamp: new Date().toISOString(),
+    path: req.path,
+    ip: req.ip,
+    userAgent: req.get('user-agent'),
   });
 
   // Обработка наших типизированных ошибок
@@ -151,7 +162,7 @@ export const unhandledErrorHandler = (
   req: Request,
   res: Response
 ): void => {
-  console.error('Unhandled error:', error);
+  logError('Необработанная ошибка', error);
 
   const errorResponse: ErrorResponse = {
     error: 'Internal Server Error',

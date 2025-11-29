@@ -1,0 +1,67 @@
+# Краткая сводка миграции: Поля расписания мастера
+
+## ✅ Выполнено
+
+### 1. Обновлена модель Prisma
+
+**Файл**: `prisma/schema.prisma`
+
+Добавлены новые поля в модель `User`:
+
+- `workSchedule` (Json?) - расписание работы по дням недели
+- `breaks` (Json?) - перерывы мастера
+- `defaultBufferMinutes` (Int?) @default(15) - буфер после услуги
+- `slotStepMinutes` (Int?) @default(15) - шаг генерации слотов
+
+### 2. Создана миграция SQL
+
+**Файл**: `prisma/migrations/20250125000000_add_master_schedule_settings/migration.sql`
+
+Миграция добавляет новые поля с значениями по умолчанию:
+
+- `workSchedule` → NULL
+- `breaks` → NULL
+- `defaultBufferMinutes` → 15
+- `slotStepMinutes` → 15
+
+### 3. Анализ совместимости
+
+**Файл**: `MIGRATION_MASTER_SCHEDULE_SETTINGS.md`
+
+## 📋 Следующие шаги
+
+1. **Применить миграцию**:
+
+   ```bash
+   cd crm-beauty-backend
+   npx prisma migrate deploy
+   # или для разработки:
+   npx prisma migrate dev
+   ```
+
+2. **Обновить Prisma Client**:
+
+   ```bash
+   npx prisma generate
+   ```
+
+3. **Обновить контроллер** (опционально):
+   - Обновить `getTimeslots` в `publicController.ts` для использования новых полей из БД
+
+## 🔒 Безопасность
+
+✅ **Обратная совместимость**: Все новые поля опциональные
+✅ **Фронтенд не сломается**: Новые поля не возвращаются в существующих эндпоинтах
+✅ **Существующие данные защищены**: Значения по умолчанию установлены
+
+## 📝 Эндпоинты, которые будут использовать новые поля
+
+1. **GET `/api/public/:slug/timeslots`** - `getTimeslots`
+   - Будет использовать новые поля через функцию `calculateAvailableSlots`
+   - Использует значения по умолчанию, если поля не заданы
+
+## 📚 Документация
+
+Полная документация доступна в файле:
+`MIGRATION_MASTER_SCHEDULE_SETTINGS.md`
+

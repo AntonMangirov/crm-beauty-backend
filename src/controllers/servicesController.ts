@@ -6,8 +6,10 @@ import {
   ServiceResponseSchema,
   ServicesListResponseSchema,
 } from '../schemas/services';
+import { ServiceNotFoundError } from '../errors/BusinessErrors';
+import { ForbiddenError } from '../errors/AppError';
+import { logError } from '../utils/logger';
 
-// Получить все услуги мастера
 export async function getServices(req: Request, res: Response) {
   try {
     const masterId = req.user?.id;
@@ -20,10 +22,15 @@ export async function getServices(req: Request, res: Response) {
       orderBy: { createdAt: 'desc' },
     });
 
-    const response = ServicesListResponseSchema.parse(services);
+    const servicesWithNumbers = services.map(service => ({
+      ...service,
+      price: Number(service.price),
+    }));
+
+    const response = ServicesListResponseSchema.parse(servicesWithNumbers);
     return res.json(response);
   } catch (error) {
-    console.error('Error fetching services:', error);
+    logError('Ошибка получения услуг', error);
     return res.status(500).json({
       error: 'Failed to fetch services',
       message: error instanceof Error ? error.message : 'Unknown error',
@@ -31,7 +38,6 @@ export async function getServices(req: Request, res: Response) {
   }
 }
 
-// Создать новую услугу
 export async function createService(req: Request, res: Response) {
   try {
     const masterId = req.user?.id;
@@ -48,10 +54,15 @@ export async function createService(req: Request, res: Response) {
       },
     });
 
-    const response = ServiceResponseSchema.parse(service);
+    const serviceWithNumber = {
+      ...service,
+      price: Number(service.price),
+    };
+
+    const response = ServiceResponseSchema.parse(serviceWithNumber);
     return res.status(201).json(response);
   } catch (error) {
-    console.error('Error creating service:', error);
+    logError('Ошибка создания услуги', error);
 
     if (error instanceof Error && error.name === 'ZodError') {
       return res.status(400).json({
@@ -67,7 +78,6 @@ export async function createService(req: Request, res: Response) {
   }
 }
 
-// Обновить услугу
 export async function updateService(req: Request, res: Response) {
   try {
     const masterId = req.user?.id;
@@ -80,15 +90,27 @@ export async function updateService(req: Request, res: Response) {
       return res.status(400).json({ error: 'Service ID is required' });
     }
 
-    // Проверяем, что услуга принадлежит мастеру
-    const existingService = await prisma.service.findFirst({
-      where: { id, masterId },
+    const existingService = await prisma.service.findUnique({
+      where: { id },
     });
 
     if (!existingService) {
-      return res
-        .status(404)
-        .json({ error: 'Service not found or access denied' });
+      const notFoundError = new ServiceNotFoundError(id);
+      return res.status(notFoundError.statusCode).json({
+        error: notFoundError.message,
+        code: notFoundError.code,
+      });
+    }
+
+    if (existingService.masterId !== masterId) {
+      const forbiddenError = new ForbiddenError(
+        'Service does not belong to the current user',
+        'SERVICE_ACCESS_DENIED'
+      );
+      return res.status(forbiddenError.statusCode).json({
+        error: forbiddenError.message,
+        code: forbiddenError.code,
+      });
     }
 
     const validatedData = UpdateServiceSchema.parse(req.body);
@@ -98,10 +120,15 @@ export async function updateService(req: Request, res: Response) {
       data: validatedData,
     });
 
-    const response = ServiceResponseSchema.parse(service);
+    const serviceWithNumber = {
+      ...service,
+      price: Number(service.price),
+    };
+
+    const response = ServiceResponseSchema.parse(serviceWithNumber);
     return res.json(response);
   } catch (error) {
-    console.error('Error updating service:', error);
+    logError('Ошибка обновления услуги', error);
 
     if (error instanceof Error && error.name === 'ZodError') {
       return res.status(400).json({
@@ -117,7 +144,6 @@ export async function updateService(req: Request, res: Response) {
   }
 }
 
-// Удалить услугу
 export async function deleteService(req: Request, res: Response) {
   try {
     const masterId = req.user?.id;
@@ -130,18 +156,29 @@ export async function deleteService(req: Request, res: Response) {
       return res.status(400).json({ error: 'Service ID is required' });
     }
 
-    // Проверяем, что услуга принадлежит мастеру
-    const existingService = await prisma.service.findFirst({
-      where: { id, masterId },
+    const existingService = await prisma.service.findUnique({
+      where: { id },
     });
 
     if (!existingService) {
-      return res
-        .status(404)
-        .json({ error: 'Service not found or access denied' });
+      const notFoundError = new ServiceNotFoundError(id);
+      return res.status(notFoundError.statusCode).json({
+        error: notFoundError.message,
+        code: notFoundError.code,
+      });
     }
 
-    // Проверяем, есть ли активные записи на эту услугу
+    if (existingService.masterId !== masterId) {
+      const forbiddenError = new ForbiddenError(
+        'Service does not belong to the current user',
+        'SERVICE_ACCESS_DENIED'
+      );
+      return res.status(forbiddenError.statusCode).json({
+        error: forbiddenError.message,
+        code: forbiddenError.code,
+      });
+    }
+
     const activeAppointments = await prisma.appointment.findFirst({
       where: {
         serviceId: id,
@@ -165,7 +202,8 @@ export async function deleteService(req: Request, res: Response) {
 
     return res.status(204).send();
   } catch (error) {
-    console.error('Error deleting service:', error);
+    logError('Ошибка удаления услуги', error);
+
     return res.status(500).json({
       error: 'Failed to delete service',
       message: error instanceof Error ? error.message : 'Unknown error',
@@ -173,7 +211,6 @@ export async function deleteService(req: Request, res: Response) {
   }
 }
 
-// Получить услугу по ID
 export async function getServiceById(req: Request, res: Response) {
   try {
     const masterId = req.user?.id;
@@ -186,20 +223,39 @@ export async function getServiceById(req: Request, res: Response) {
       return res.status(400).json({ error: 'Service ID is required' });
     }
 
-    const service = await prisma.service.findFirst({
-      where: { id, masterId },
+    const service = await prisma.service.findUnique({
+      where: { id },
     });
 
     if (!service) {
-      return res
-        .status(404)
-        .json({ error: 'Service not found or access denied' });
+      const notFoundError = new ServiceNotFoundError(id);
+      return res.status(notFoundError.statusCode).json({
+        error: notFoundError.message,
+        code: notFoundError.code,
+      });
     }
 
-    const response = ServiceResponseSchema.parse(service);
+    if (service.masterId !== masterId) {
+      const forbiddenError = new ForbiddenError(
+        'Service does not belong to the current user',
+        'SERVICE_ACCESS_DENIED'
+      );
+      return res.status(forbiddenError.statusCode).json({
+        error: forbiddenError.message,
+        code: forbiddenError.code,
+      });
+    }
+
+    const serviceWithNumber = {
+      ...service,
+      price: Number(service.price),
+    };
+
+    const response = ServiceResponseSchema.parse(serviceWithNumber);
     return res.json(response);
   } catch (error) {
-    console.error('Error fetching service:', error);
+    logError('Ошибка получения услуги', error);
+
     return res.status(500).json({
       error: 'Failed to fetch service',
       message: error instanceof Error ? error.message : 'Unknown error',

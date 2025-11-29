@@ -34,6 +34,7 @@ import { Request, Response } from 'express';
 import jwt from 'jsonwebtoken';
 import prisma from '../prismaClient';
 import { createRefreshToken } from './tokens';
+import { logError } from '../utils/logger';
 
 // Расширяем тип Request для добавления user
 declare global {
@@ -77,10 +78,10 @@ export async function refreshToken(req: Request, res: Response) {
     res.json({
       accessToken,
       tokenType: 'Bearer',
-      expiresIn: 900, // 15 минут в секундах
+      expiresIn: 900,
     });
   } catch (error) {
-    console.error('Token refresh error:', error);
+    logError('Ошибка обновления токена', error);
     res.status(500).json({ error: 'Server error' });
   }
 }
@@ -105,7 +106,7 @@ export async function revokeToken(req: Request, res: Response) {
 
     res.json({ message: 'Token revoked successfully' });
   } catch (error) {
-    console.error('Token revocation error:', error);
+    logError('Ошибка отзыва токена', error);
     res.status(500).json({ error: 'Server error' });
   }
 }

@@ -1,6 +1,5 @@
 import bcrypt from 'bcrypt';
 
-// Простая система паролей для разработки
 export async function hashPassword(password: string): Promise<string> {
   return await bcrypt.hash(password, 10);
 }

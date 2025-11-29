@@ -335,7 +335,7 @@ API документация будет доступна по адресу `/api
 - `GET /api/services` - получение услуг мастера
 - `POST /api/services` - создание новой услуги
 - `GET /api/services/:id` - получение услуги по ID
-- `PUT /api/services/:id` - обновление услуги
+- `PATCH /api/services/:id` - обновление услуги
 - `DELETE /api/services/:id` - удаление услуги
 
 #### Записи

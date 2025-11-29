@@ -159,15 +159,6 @@ export const timeLoggingMiddleware = (
   next: NextFunction
 ) => {
   const startTime = getCurrentUTC();
-
-  // Логируем начало операции
-  if (process.env.NODE_ENV === 'development') {
-    console.log(
-      `[TIME] ${req.method} ${req.path} started at ${startTime.toISOString()}`
-    );
-  }
-
-  // Перехватываем ответ для логирования времени выполнения
   const originalSend = res.send;
   res.send = function (body) {
     const endTime = getCurrentUTC();

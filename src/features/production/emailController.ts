@@ -31,6 +31,7 @@
 import { Request, Response } from 'express';
 import prisma from '../prismaClient';
 import { generateEmailVerifyToken, createPasswordResetToken } from './tokens';
+import { logError } from '../utils/logger';
 
 // Расширяем тип Request для добавления user
 declare global {
@@ -74,10 +75,10 @@ export async function sendEmailVerification(req: Request, res: Response) {
     // Пока возвращаем токен для тестирования
     res.json({
       message: 'Verification email sent',
-      token: emailVerifyToken, // УБРАТЬ В ПРОДАКШЕНЕ!
+      token: emailVerifyToken,
     });
   } catch (error) {
-    console.error('Email verification error:', error);
+    logError('Ошибка отправки верификации email', error);
     res.status(500).json({ error: 'Server error' });
   }
 }
@@ -106,7 +107,7 @@ export async function verifyEmail(req: Request, res: Response) {
 
     res.json({ message: 'Email verified successfully' });
   } catch (error) {
-    console.error('Email verification error:', error);
+    logError('Ошибка подтверждения email', error);
     res.status(500).json({ error: 'Server error' });
   }
 }
@@ -144,10 +145,10 @@ export async function requestPasswordReset(req: Request, res: Response) {
     // Пока возвращаем токен для тестирования
     res.json({
       message: 'If email exists, reset instructions sent',
-      token, // УБРАТЬ В ПРОДАКШЕНЕ!
+      token,
     });
   } catch (error) {
-    console.error('Password reset request error:', error);
+    logError('Ошибка запроса сброса пароля', error);
     res.status(500).json({ error: 'Server error' });
   }
 }
@@ -192,7 +193,7 @@ export async function resetPassword(req: Request, res: Response) {
 
     res.json({ message: 'Password reset successfully' });
   } catch (error) {
-    console.error('Password reset error:', error);
+    logError('Ошибка сброса пароля', error);
     res.status(500).json({ error: 'Server error' });
   }
 }

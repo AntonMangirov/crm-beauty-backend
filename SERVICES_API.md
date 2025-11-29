@@ -64,7 +64,7 @@ Authorization: Bearer <token>
 ### 4. Обновить услугу
 
 ```
-PUT /api/services/:id
+PATCH /api/services/:id
 Authorization: Bearer <token>
 Content-Type: application/json
 ```
@@ -110,6 +110,10 @@ Authorization: Bearer <token>
 - Все endpoints требуют авторизации
 - Мастер может управлять только своими услугами
 - Нельзя удалить услугу с активными записями (PENDING, CONFIRMED)
+
+
+
+
 
 
 

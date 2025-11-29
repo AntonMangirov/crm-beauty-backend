@@ -1,0 +1,3 @@
+﻿-- AlterTable
+ALTER TABLE "User" ADD COLUMN "lat" DECIMAL(10,8),
+ADD COLUMN "lng" DECIMAL(11,8);

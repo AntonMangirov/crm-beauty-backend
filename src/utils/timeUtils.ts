@@ -229,3 +229,115 @@ export function isValidISOString(isoString: string): boolean {
     return false;
   }
 }
+
+/**
+ * Преобразует UTC время в локальное время мастера
+ *
+ * @param utcDate - Дата/время в UTC
+ * @param timezone - Часовой пояс мастера (например, 'Europe/Moscow', 'America/New_York')
+ * @returns Компоненты локального времени мастера
+ */
+export function convertUTCToMasterTZ(
+  utcDate: Date,
+  timezone: string
+): {
+  dateStr: string; // YYYY-MM-DD
+  hour: number; // 0-23
+  minute: number; // 0-59
+  dayOfWeek: number; // 0-6 (0 = воскресенье)
+} {
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: timezone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    weekday: 'long',
+    hour12: false,
+  });
+
+  const parts = formatter.formatToParts(utcDate);
+  const year = parts.find(p => p.type === 'year')!.value;
+  const month = parts.find(p => p.type === 'month')!.value;
+  const day = parts.find(p => p.type === 'day')!.value;
+  const hour = parseInt(parts.find(p => p.type === 'hour')!.value);
+  const minute = parseInt(parts.find(p => p.type === 'minute')!.value);
+  const weekday = parts.find(p => p.type === 'weekday')!.value;
+
+  const dateStr = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+
+  // Преобразуем день недели: Sunday = 0, Monday = 1, ..., Saturday = 6
+  const weekdayMap: Record<string, number> = {
+    Sunday: 0,
+    Monday: 1,
+    Tuesday: 2,
+    Wednesday: 3,
+    Thursday: 4,
+    Friday: 5,
+    Saturday: 6,
+  };
+  const dayOfWeek = weekdayMap[weekday] ?? 0;
+
+  return { dateStr, hour, minute, dayOfWeek };
+}
+
+/**
+ * Преобразует локальное время мастера в UTC
+ *
+ * @param dateStr - Дата в формате YYYY-MM-DD (в часовом поясе мастера)
+ * @param timeStr - Время в формате HH:mm (в часовом поясе мастера)
+ * @param timezone - Часовой пояс мастера (например, 'Europe/Moscow', 'America/New_York')
+ * @returns Date объект в UTC
+ */
+export function convertMasterTZToUTC(
+  dateStr: string,
+  timeStr: string,
+  timezone: string
+): Date {
+  // Парсим дату (YYYY-MM-DD)
+  const [year, month, day] = dateStr.split('-').map(Number);
+
+  // Парсим время (HH:mm)
+  const [hours, minutes] = timeStr.split(':').map(Number);
+
+  // Создаем строку даты и времени
+  const dateTimeStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}T${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:00`;
+
+  // Используем итеративный подход для нахождения правильной UTC даты
+  // Начинаем с предположения, что это UTC время
+  let candidateUTC = new Date(dateTimeStr + 'Z');
+
+  // Итеративно корректируем до тех пор, пока локальное время мастера не совпадет с желаемым
+  for (let i = 0; i < 10; i++) {
+    // Получаем локальное время мастера для этой UTC даты
+    const formatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: timezone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    });
+
+    const parts = formatter.formatToParts(candidateUTC);
+    const masterHour = parseInt(parts.find(p => p.type === 'hour')!.value);
+    const masterMinute = parseInt(parts.find(p => p.type === 'minute')!.value);
+
+    // Вычисляем разницу в минутах
+    const desiredMinutes = hours * 60 + minutes;
+    const actualMinutes = masterHour * 60 + masterMinute;
+    const diffMinutes = desiredMinutes - actualMinutes;
+
+    // Если разница очень мала, возвращаем результат
+    if (Math.abs(diffMinutes) < 1) {
+      break;
+    }
+
+    // Корректируем UTC дату
+    candidateUTC = new Date(candidateUTC.getTime() + diffMinutes * 60 * 1000);
+  }
+
+  return candidateUTC;
+}
