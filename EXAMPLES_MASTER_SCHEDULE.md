@@ -349,3 +349,4 @@ type Breaks = Array<{
 4. **Null значения**: Все null значения обрабатываются с fallback логикой
 
 
+

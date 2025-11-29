@@ -7,10 +7,12 @@
 ## Проблема
 
 Ранее логика получения расписания мастера дублировалась в двух местах:
+
 - `getTimeslots` - для генерации доступных слотов
 - `bookPublicSlot` - для валидации времени бронирования
 
 Это приводило к ситуации, когда:
+
 - Алгоритм слотов мог разрешить время на основе одних настроек
 - Валидация могла отклонить это же время на основе других настроек
 
@@ -21,16 +23,18 @@
 **Расположение**: `src/utils/slotCalculator.ts`
 
 **Сигнатура**:
+
 ```typescript
 export function getMasterDailySchedule(
   master: MasterWithSchedule,
   date: Date | string,
   timezone: string = 'Europe/Moscow',
   minServiceDurationMinutes: number = 15
-): MasterSettings
+): MasterSettings;
 ```
 
 **Что делает**:
+
 1. Принимает мастера с настройками из БД и дату
 2. Определяет день недели **в часовом поясе мастера** (не UTC!)
 3. Извлекает рабочие интервалы для этого дня из `workSchedule`
@@ -57,6 +61,7 @@ calculateAvailableSlots(date, serviceIds, masterSettings, existingBookings, serv
 ```
 
 **Код**:
+
 ```typescript
 const masterSettings = getMasterDailySchedule(
   master,
@@ -88,6 +93,7 @@ isValidBookingTimeForMaster(masterSettings, start, duration)
 ```
 
 **Код**:
+
 ```typescript
 const masterSettings = getMasterDailySchedule(
   master,
@@ -113,6 +119,7 @@ const validationResult = isValidBookingTimeForMaster(
 ## Структура данных
 
 ### MasterWithSchedule (входные данные)
+
 ```typescript
 interface MasterWithSchedule {
   workSchedule: unknown; // JSON из БД
@@ -123,6 +130,7 @@ interface MasterWithSchedule {
 ```
 
 ### MasterSettings (выходные данные)
+
 ```typescript
 interface MasterSettings {
   workIntervals: WorkInterval[]; // Рабочие интервалы для дня
@@ -138,6 +146,7 @@ interface MasterSettings {
 ## Fallback значения
 
 Если мастер не настроил расписание:
+
 - `workIntervals`: `[{ start: '09:00', end: '18:00' }]`
 - `breaks`: `[]`
 - `serviceBufferMinutes`: `15`
@@ -158,6 +167,7 @@ interface MasterSettings {
 ## Тестирование
 
 Для проверки консистентности:
+
 1. Сгенерировать слоты через `getTimeslots`
 2. Попробовать забронировать один из слотов через `bookPublicSlot`
 3. Бронирование должно пройти успешно (если слот не занят)
@@ -165,6 +175,7 @@ interface MasterSettings {
 ## Миграция
 
 Изменения обратно совместимы:
+
 - Старые функции `calculateAvailableSlots` и `isValidBookingTimeForMaster` не изменены
 - Они по-прежнему принимают `MasterSettings` как параметр
 - Изменились только места создания `MasterSettings` - теперь через единую функцию

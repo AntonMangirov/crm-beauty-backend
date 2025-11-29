@@ -26,3 +26,4 @@ ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "slotStepMinutes" INTEGER DEFAULT 15
 -- slotStepMinutes = 15 (значение по умолчанию)
 
 
+

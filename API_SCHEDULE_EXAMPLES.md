@@ -479,3 +479,4 @@ curl -X PUT http://localhost:3000/api/me/schedule \
 3. Старый API продолжает работать - изменения обратно совместимы
 
 
+

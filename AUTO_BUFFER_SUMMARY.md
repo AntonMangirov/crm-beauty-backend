@@ -76,3 +76,4 @@ export interface ExistingBooking {
 ✅ Обратная совместимость сохранена (`autoBuffer` опциональный, по умолчанию `false`)
 
 
+
