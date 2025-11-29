@@ -1,12 +1,16 @@
 /**
- * Утилита для логирования ошибок в файл
+ * Production-ready утилита для логирования на основе Pino
  *
  * Логи сохраняются в:
- * - logs/error.log - все ошибки
+ * - logs/error.log - все ошибки и предупреждения
  * - logs/booking.log - логи бронирования
  * - logs/app.log - общие логи приложения
+ * - logs/dev-analytics.log - логи для разработчиков (dev analytics)
+ *
+ * В development режиме логи также выводятся в консоль с форматированием через pino-pretty
  */
 
+import pino from 'pino';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -17,60 +21,63 @@ if (!fs.existsSync(LOGS_DIR)) {
   fs.mkdirSync(LOGS_DIR, { recursive: true });
 }
 
-interface LogEntry {
-  timestamp: string;
-  level: 'error' | 'warn' | 'info' | 'debug';
-  message: string;
-  context?: Record<string, unknown>;
-  error?: {
-    message: string;
-    stack?: string;
-    code?: string;
-  };
-}
+const isDevelopment = process.env.NODE_ENV === 'development';
 
-/**
- * Форматирует запись лога в строку
- */
-function formatLogEntry(entry: LogEntry): string {
-  const parts = [
-    `[${entry.timestamp}]`,
-    `[${entry.level.toUpperCase()}]`,
-    entry.message,
-  ];
+// Базовые настройки Pino
+const baseLoggerOptions: pino.LoggerOptions = {
+  level: isDevelopment ? 'debug' : 'info',
+  formatters: {
+    level: (label: string) => {
+      return { level: label };
+    },
+  },
+  timestamp: pino.stdTimeFunctions.isoTime,
+};
 
-  if (entry.context && Object.keys(entry.context).length > 0) {
-    parts.push(`Context: ${JSON.stringify(entry.context)}`);
-  }
+// Создаём streams для разных файлов
+const errorLogStream = pino.destination({
+  dest: path.join(LOGS_DIR, 'error.log'),
+  sync: false, // Асинхронная запись для производительности
+});
 
-  if (entry.error) {
-    parts.push(`Error: ${entry.error.message}`);
-    if (entry.error.code) {
-      parts.push(`Code: ${entry.error.code}`);
-    }
-    if (entry.error.stack) {
-      parts.push(`Stack: ${entry.error.stack}`);
-    }
-  }
+const bookingLogStream = pino.destination({
+  dest: path.join(LOGS_DIR, 'booking.log'),
+  sync: false,
+});
 
-  return parts.join(' ') + '\n';
-}
+const appLogStream = pino.destination({
+  dest: path.join(LOGS_DIR, 'app.log'),
+  sync: false,
+});
 
-/**
- * Записывает лог в файл
- */
-function writeLog(filename: string, entry: LogEntry): void {
-  try {
-    const filePath = path.join(LOGS_DIR, filename);
-    const logLine = formatLogEntry(entry);
+const devAnalyticsLogStream = pino.destination({
+  dest: path.join(LOGS_DIR, 'dev-analytics.log'),
+  sync: false,
+});
 
-    // Добавляем в конец файла (append)
-    fs.appendFileSync(filePath, logLine, 'utf8');
-  } catch (error) {
-    // Если не удалось записать в файл, выводим в консоль
-    console.error('[LOGGER] Failed to write to log file:', error);
-    console.error(formatLogEntry(entry));
-  }
+// Создаём логгеры для разных файлов
+const errorLogger = pino(baseLoggerOptions, errorLogStream);
+const bookingLogger = pino(baseLoggerOptions, bookingLogStream);
+const appLogger = pino(baseLoggerOptions, appLogStream);
+const devAnalyticsLogger = pino(baseLoggerOptions, devAnalyticsLogStream);
+
+// В development режиме добавляем pretty-форматирование в консоль
+let consoleLogger: pino.Logger;
+if (isDevelopment) {
+  consoleLogger = pino({
+    ...baseLoggerOptions,
+    transport: {
+      target: 'pino-pretty',
+      options: {
+        colorize: true,
+        translateTime: 'HH:MM:ss Z',
+        ignore: 'pid,hostname',
+      },
+    },
+  });
+} else {
+  // В production просто выводим JSON в stdout
+  consoleLogger = pino(baseLoggerOptions);
 }
 
 /**
@@ -81,31 +88,26 @@ export function logError(
   error?: Error | unknown,
   context?: Record<string, unknown>
 ): void {
-  const entry: LogEntry = {
-    timestamp: new Date().toISOString(),
-    level: 'error',
-    message,
-    context,
+  const logData: Record<string, unknown> = {
+    msg: message,
+    ...context,
   };
 
   if (error instanceof Error) {
-    entry.error = {
+    logData.err = {
       message: error.message,
       stack: error.stack,
       code: (error as { code?: string }).code,
+      name: error.name,
     };
   } else if (error) {
-    entry.error = {
+    logData.err = {
       message: String(error),
     };
   }
 
-  writeLog('error.log', entry);
-
-  // Также выводим в консоль для разработки
-  if (process.env.NODE_ENV === 'development') {
-    console.error(`[ERROR] ${message}`, error, context);
-  }
+  errorLogger.error(logData);
+  consoleLogger.error(logData);
 }
 
 /**
@@ -115,18 +117,13 @@ export function logWarn(
   message: string,
   context?: Record<string, unknown>
 ): void {
-  const entry: LogEntry = {
-    timestamp: new Date().toISOString(),
-    level: 'warn',
-    message,
-    context,
+  const logData = {
+    msg: message,
+    ...context,
   };
 
-  writeLog('error.log', entry);
-
-  if (process.env.NODE_ENV === 'development') {
-    console.warn(`[WARN] ${message}`, context);
-  }
+  errorLogger.warn(logData);
+  consoleLogger.warn(logData);
 }
 
 /**
@@ -136,18 +133,13 @@ export function logBooking(
   message: string,
   context?: Record<string, unknown>
 ): void {
-  const entry: LogEntry = {
-    timestamp: new Date().toISOString(),
-    level: 'info',
-    message,
-    context,
+  const logData = {
+    msg: message,
+    ...context,
   };
 
-  writeLog('booking.log', entry);
-
-  if (process.env.NODE_ENV === 'development') {
-    console.log(`[BOOKING] ${message}`, context);
-  }
+  bookingLogger.info(logData);
+  consoleLogger.info({ ...logData, category: 'booking' });
 }
 
 /**
@@ -157,18 +149,13 @@ export function logInfo(
   message: string,
   context?: Record<string, unknown>
 ): void {
-  const entry: LogEntry = {
-    timestamp: new Date().toISOString(),
-    level: 'info',
-    message,
-    context,
+  const logData = {
+    msg: message,
+    ...context,
   };
 
-  writeLog('app.log', entry);
-
-  if (process.env.NODE_ENV === 'development') {
-    console.log(`[INFO] ${message}`, context);
-  }
+  appLogger.info(logData);
+  consoleLogger.info(logData);
 }
 
 /**
@@ -181,37 +168,44 @@ export function logDevError(
   error?: Error | unknown,
   context?: Record<string, unknown>
 ): void {
-  const entry: LogEntry = {
-    timestamp: new Date().toISOString(),
-    level: 'error',
-    message: `[DEV_ANALYTICS] ${message}`,
-    context: {
-      ...context,
-      errorCode,
-      isDevAnalytics: true,
-    },
+  const logData: Record<string, unknown> = {
+    msg: `[DEV_ANALYTICS] ${message}`,
+    errorCode,
+    isDevAnalytics: true,
+    ...context,
   };
 
   if (error instanceof Error) {
-    entry.error = {
+    logData.err = {
       message: error.message,
       stack: error.stack,
       code: (error as { code?: string }).code,
+      name: error.name,
     };
   } else if (error) {
-    entry.error = {
+    logData.err = {
       message: String(error),
     };
   }
 
   // Логируем в отдельный файл для разработчиков
-  writeLog('dev-analytics.log', entry);
+  devAnalyticsLogger.error(logData);
 
   // Также логируем в общий error.log
-  writeLog('error.log', entry);
+  errorLogger.error(logData);
 
-  // Выводим в консоль для разработки
-  if (process.env.NODE_ENV === 'development') {
-    console.error(`[DEV_ANALYTICS] [${errorCode}] ${message}`, error, context);
-  }
+  // Выводим в консоль
+  consoleLogger.error(logData);
 }
+
+/**
+ * Экспортируем базовые логгеры для расширенного использования
+ */
+export const logger = {
+  error: errorLogger,
+  warn: errorLogger,
+  info: appLogger,
+  debug: isDevelopment ? consoleLogger : appLogger,
+  booking: bookingLogger,
+  devAnalytics: devAnalyticsLogger,
+};
