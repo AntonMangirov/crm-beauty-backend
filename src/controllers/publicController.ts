@@ -871,7 +871,8 @@ export async function bookPublicSlot(req: Request, res: Response) {
 export async function getTimeslots(req: Request, res: Response) {
   try {
     const { slug } = req.params;
-    const validatedQuery = req.validatedQuery as
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const validatedQuery = (req as any).validatedQuery as
       | {
           date?: string;
           serviceId?: string;
