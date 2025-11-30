@@ -180,3 +180,4 @@ interface MasterSettings {
 - Они по-прежнему принимают `MasterSettings` как параметр
 - Изменились только места создания `MasterSettings` - теперь через единую функцию
 
+

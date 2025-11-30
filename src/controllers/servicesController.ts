@@ -179,25 +179,44 @@ export async function deleteService(req: Request, res: Response) {
       });
     }
 
-    const activeAppointments = await prisma.appointment.findFirst({
+    // Проверяем наличие ЛЮБЫХ записей (не только активных)
+    // Это необходимо для сохранения истории клиентов
+    const appointmentsCount = await prisma.appointment.count({
       where: {
         serviceId: id,
-        status: {
-          in: ['PENDING', 'CONFIRMED'],
-        },
       },
     });
 
-    if (activeAppointments) {
+    if (appointmentsCount > 0) {
+      // Проверяем наличие активных записей для более информативного сообщения
+      const activeAppointmentsCount = await prisma.appointment.count({
+        where: {
+          serviceId: id,
+          status: {
+            in: ['PENDING', 'CONFIRMED'],
+          },
+        },
+      });
+
+      if (activeAppointmentsCount > 0) {
+        return res.status(400).json({
+          error: 'Cannot delete service with active appointments',
+          message:
+            'Please cancel or complete all active appointments for this service first',
+        });
+      }
+
+      // Если есть только исторические записи, предлагаем использовать деактивацию
       return res.status(400).json({
-        error: 'Cannot delete service with active appointments',
-        message:
-          'Please cancel or complete all appointments for this service first',
+        error: 'Cannot delete service with appointment history',
+        message: `This service has ${appointmentsCount} appointment(s) in history. Consider deactivating it instead (set isActive = false) to preserve client history.`,
       });
     }
 
-    await prisma.service.delete({
+    // Используем soft delete вместо физического удаления
+    await prisma.service.update({
       where: { id },
+      data: { isActive: false },
     });
 
     return res.status(204).send();

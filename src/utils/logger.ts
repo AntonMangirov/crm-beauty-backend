@@ -34,32 +34,56 @@ const baseLoggerOptions: pino.LoggerOptions = {
   timestamp: pino.stdTimeFunctions.isoTime,
 };
 
-// Создаём streams для разных файлов
-const errorLogStream = pino.destination({
-  dest: path.join(LOGS_DIR, 'error.log'),
-  sync: false, // Асинхронная запись для производительности
-});
+// В development режиме используем только console logger для избежания проблем с sonic-boom
+// В production создаем файловые streams
+let errorLogStream: pino.DestinationStream | null = null;
+let bookingLogStream: pino.DestinationStream | null = null;
+let appLogStream: pino.DestinationStream | null = null;
+let devAnalyticsLogStream: pino.DestinationStream | null = null;
 
-const bookingLogStream = pino.destination({
-  dest: path.join(LOGS_DIR, 'booking.log'),
-  sync: false,
-});
+if (!isDevelopment) {
+  // В production создаем файловые streams
+  const createSafeDestination = (filePath: string) => {
+    try {
+      const stream = pino.destination({
+        dest: filePath,
+        sync: false,
+        mkdir: true,
+      });
 
-const appLogStream = pino.destination({
-  dest: path.join(LOGS_DIR, 'app.log'),
-  sync: false,
-});
+      stream.on('error', err => {
+        console.error('Logger stream error:', err);
+      });
 
-const devAnalyticsLogStream = pino.destination({
-  dest: path.join(LOGS_DIR, 'dev-analytics.log'),
-  sync: false,
-});
+      return stream;
+    } catch (error) {
+      console.error(`Failed to create log stream for ${filePath}:`, error);
+      return null;
+    }
+  };
+
+  errorLogStream = createSafeDestination(path.join(LOGS_DIR, 'error.log'));
+  bookingLogStream = createSafeDestination(path.join(LOGS_DIR, 'booking.log'));
+  appLogStream = createSafeDestination(path.join(LOGS_DIR, 'app.log'));
+  devAnalyticsLogStream = createSafeDestination(
+    path.join(LOGS_DIR, 'dev-analytics.log')
+  );
+}
 
 // Создаём логгеры для разных файлов
-const errorLogger = pino(baseLoggerOptions, errorLogStream);
-const bookingLogger = pino(baseLoggerOptions, bookingLogStream);
-const appLogger = pino(baseLoggerOptions, appLogStream);
-const devAnalyticsLogger = pino(baseLoggerOptions, devAnalyticsLogStream);
+// В development используем только console logger
+const errorLogger = errorLogStream
+  ? pino(baseLoggerOptions, errorLogStream)
+  : pino(baseLoggerOptions);
+const bookingLogger = bookingLogStream
+  ? pino(baseLoggerOptions, bookingLogStream)
+  : pino(baseLoggerOptions);
+const appLogger = appLogStream
+  ? pino(baseLoggerOptions, appLogStream)
+  : pino(baseLoggerOptions);
+const devAnalyticsLogger = devAnalyticsLogStream
+  ? pino(baseLoggerOptions, devAnalyticsLogStream)
+  : pino(baseLoggerOptions);
 
 // В development режиме добавляем pretty-форматирование в консоль
 let consoleLogger: pino.Logger;
@@ -197,6 +221,41 @@ export function logDevError(
   // Выводим в консоль
   consoleLogger.error(logData);
 }
+
+/**
+ * Graceful shutdown для логгеров
+ * Закрывает все streams корректно при завершении процесса
+ */
+export function closeLoggers(): Promise<void> {
+  return new Promise(resolve => {
+    // В development режиме streams не создаются, поэтому просто резолвим
+    if (isDevelopment) {
+      resolve();
+      return;
+    }
+
+    const streams = [
+      errorLogStream,
+      bookingLogStream,
+      appLogStream,
+      devAnalyticsLogStream,
+    ].filter(Boolean) as pino.DestinationStream[]; // Фильтруем null значения
+
+    if (streams.length === 0) {
+      resolve();
+      return;
+    }
+
+    // Pino destination streams закрываются автоматически при завершении процесса
+    // Мы просто даем время на завершение записи
+    setTimeout(() => {
+      resolve();
+    }, 100);
+  });
+}
+
+// НЕ добавляем обработчики здесь, чтобы избежать конфликтов
+// Обработка graceful shutdown будет в index.ts
 
 /**
  * Экспортируем базовые логгеры для расширенного использования

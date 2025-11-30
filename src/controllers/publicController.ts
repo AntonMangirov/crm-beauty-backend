@@ -717,6 +717,10 @@ export async function bookPublicSlot(req: Request, res: Response) {
           notes: comment,
           price: finalPrice,
           source: source || 'WEB', // По умолчанию WEB, но можно передать MANUAL для записей из ЛК
+          // Сохраняем снапшоты данных услуги для истории
+          serviceName: service.name,
+          serviceDuration: duration, // Используем фактическую длительность (может быть кастомная)
+          servicePrice: Number(service.price), // Сохраняем оригинальную цену услуги
         },
         select: {
           id: true,
@@ -867,7 +871,7 @@ export async function bookPublicSlot(req: Request, res: Response) {
 export async function getTimeslots(req: Request, res: Response) {
   try {
     const { slug } = req.params;
-    const validatedQuery = (req as any).validatedQuery as
+    const validatedQuery = req.validatedQuery as
       | {
           date?: string;
           serviceId?: string;

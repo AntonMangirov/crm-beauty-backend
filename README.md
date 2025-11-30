@@ -36,8 +36,9 @@ src/
 
 - Node.js (версия 18 или выше)
 - npm или yarn
-- PostgreSQL
-- Docker (опционально)
+- PostgreSQL (версия 12 или выше)
+- Redis (опционально, для очереди уведомлений)
+- Docker (опционально, для запуска PostgreSQL и Redis)
 
 ### 1. Клонирование репозитория
 
@@ -76,18 +77,67 @@ docker exec -it crm-postgres psql -U postgres -d crm_beauty_db
 
 Установите PostgreSQL локально и создайте базу данных `crm_beauty_db`.
 
-### 4. Настройка переменных окружения
+### 4. Настройка Redis (опционально, для очереди уведомлений)
 
-Создайте файл `.env` в корне проекта:
+Redis используется для асинхронной обработки уведомлений. Приложение будет работать без Redis, но уведомления могут не отправляться.
+
+#### Вариант A: Использование Docker
+
+```bash
+# Запуск Redis контейнера
+docker run --name crm-redis \
+  -p 6379:6379 \
+  -d redis:7-alpine
+
+# Проверка статуса контейнера
+docker ps
+```
+
+#### Вариант B: Локальная установка Redis
+
+Установите Redis локально и запустите сервер на порту 6379.
+
+### 5. Настройка переменных окружения
+
+Создайте файл `.env` в корне проекта `crm-beauty-backend`:
 
 ```env
+# Обязательные переменные
 DATABASE_URL="postgresql://postgres:12345@localhost:5433/crm_beauty_db"
 JWT_SECRET="your-jwt-secret-key-change-in-production"
 PORT=3000
 NODE_ENV=development
+
+# Redis (опционально, для очереди уведомлений)
+REDIS_URL="redis://localhost:6379"
+# Или используйте отдельные переменные:
+# REDIS_HOST=localhost
+# REDIS_PORT=6379
+
+# Загрузка изображений (опционально)
+# По умолчанию используется локальное хранилище (папка uploads/)
+UPLOAD_MODE=local
+# Для использования Cloudinary раскомментируйте и заполните:
+# UPLOAD_MODE=cloudinary
+# CLOUDINARY_CLOUD_NAME=your-cloud-name
+# CLOUDINARY_API_KEY=your-api-key
+# CLOUDINARY_API_SECRET=your-api-secret
+
+# reCAPTCHA (опционально, для защиты форм)
+# RECAPTCHA_SECRET_KEY=your-recaptcha-secret-key
+# RECAPTCHA_MIN_SCORE=0.5
+
+# Геокодинг (опционально)
+# GEOCODING_USER_AGENT=your-app-name
 ```
 
-### 5. Инициализация базы данных
+**Примечание:** Минимально необходимые переменные для запуска:
+- `DATABASE_URL` - строка подключения к PostgreSQL
+- `JWT_SECRET` - секретный ключ для JWT токенов
+- `PORT` - порт сервера (по умолчанию 3000)
+- `NODE_ENV` - окружение (development/production)
+
+### 6. Инициализация базы данных
 
 ```bash
 # Генерация Prisma клиента
@@ -118,17 +168,30 @@ npx ts-node prisma/seed.ts
 # 1. Установка зависимостей
 npm install
 
-# 2. Настройка базы данных (создайте .env файл)
-# DATABASE_URL="postgresql://postgres:password@localhost:5432/crm_beauty?schema=public"
-# JWT_SECRET="your-jwt-secret-key"
+# 2. Настройка базы данных (Docker)
+docker run --name crm-postgres \
+  -e POSTGRES_PASSWORD=12345 \
+  -e POSTGRES_USER=postgres \
+  -e POSTGRES_DB=crm_beauty_db \
+  -p 5433:5432 \
+  -d postgres:15
 
-# 3. Применение миграций
+# 3. Настройка Redis (опционально, Docker)
+docker run --name crm-redis -p 6379:6379 -d redis:7-alpine
+
+# 4. Создайте файл .env в корне проекта с минимальными настройками:
+# DATABASE_URL="postgresql://postgres:12345@localhost:5433/crm_beauty_db"
+# JWT_SECRET="your-jwt-secret-key-change-in-production"
+# PORT=3000
+# NODE_ENV=development
+
+# 5. Применение миграций
 npm run db:migrate
 
-# 4. Заполнение тестовыми данными
+# 6. Заполнение тестовыми данными
 npm run seed
 
-# 5. Запуск сервера
+# 7. Запуск сервера
 npm run dev
 ```
 

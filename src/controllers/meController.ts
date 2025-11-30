@@ -1081,7 +1081,15 @@ export async function getClientHistory(req: Request, res: Response) {
         clientId,
         masterId: userId,
       },
-      include: {
+      select: {
+        id: true,
+        startAt: true,
+        status: true,
+        serviceId: true,
+        serviceName: true,
+        serviceDuration: true,
+        servicePrice: true,
+        price: true,
         service: {
           select: {
             id: true,
@@ -1125,14 +1133,25 @@ export async function getClientHistory(req: Request, res: Response) {
           createdAt: photo.createdAt,
         }));
 
+      // Используем снапшоты как fallback, если Service удален
+      // Снапшоты сохраняются при создании записи и не изменяются при удалении Service
+      const serviceData = appointment.service
+        ? {
+            id: appointment.service.id,
+            name: appointment.service.name,
+            price: Number(appointment.service.price),
+          }
+        : {
+            // Fallback на снапшоты, если Service удален
+            id: appointment.serviceId,
+            name: appointment.serviceName || 'Услуга удалена',
+            price: Number(appointment.servicePrice || appointment.price || 0),
+          };
+
       return {
         id: appointment.id,
         date: appointment.startAt,
-        service: {
-          id: appointment.service.id,
-          name: appointment.service.name,
-          price: Number(appointment.service.price),
-        },
+        service: serviceData,
         status: appointment.status,
         photos: relatedPhotos,
       };
