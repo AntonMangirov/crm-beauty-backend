@@ -244,3 +244,7 @@ npm test -- client-history-preservation.test.ts
 2. Если история недоступна при удаленном Service → проверить fallback в getClientHistory
 3. Если можно удалить Service с историей → проверить Restrict constraint и логику deleteService
 
+
+
+
+

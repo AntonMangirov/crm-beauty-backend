@@ -15,6 +15,8 @@
     "format": "prettier --write src/**/*.ts",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
+    "db:migrate:deploy": "prisma migrate deploy",
+    "db:setup": "prisma generate && prisma migrate deploy",
     "db:seed": "prisma db seed",
     "db:studio": "prisma studio",
     "db:reset": "prisma migrate reset",

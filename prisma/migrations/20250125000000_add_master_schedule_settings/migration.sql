@@ -28,3 +28,7 @@ ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "slotStepMinutes" INTEGER DEFAULT 15
 
 
 
+
+
+
+

@@ -447,3 +447,7 @@ const historyItems = appointments.map((appointment, index) => {
 
 **Риск потери данных:** 🔴 **КРИТИЧЕСКИЙ**
 
+
+
+
+

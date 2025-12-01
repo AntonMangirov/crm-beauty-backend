@@ -57,14 +57,23 @@ npm install
 
 #### Вариант A: Использование Docker (рекомендуется)
 
+**⚠️ Важно для новых разработчиков:** Если у вас проблемы с миграциями, см. [SETUP_FOR_NEW_DEVELOPER.md](./SETUP_FOR_NEW_DEVELOPER.md)
+
 ```bash
-# Запуск PostgreSQL контейнера
+# Проверьте, существует ли контейнер
+docker ps -a | grep crm-postgres
+
+# Если контейнер не существует, создайте его с volume для сохранения данных:
 docker run --name crm-postgres \
   -e POSTGRES_PASSWORD=12345 \
   -e POSTGRES_USER=postgres \
   -e POSTGRES_DB=crm_beauty_db \
   -p 5433:5432 \
+  -v crm-postgres-data:/var/lib/postgresql/data \
   -d postgres:15
+
+# Если контейнер существует, но остановлен, запустите его:
+docker start crm-postgres
 
 # Проверка статуса контейнера
 docker ps
@@ -139,16 +148,24 @@ UPLOAD_MODE=local
 
 ### 6. Инициализация базы данных
 
+**⚠️ Для новых разработчиков:** Используйте `prisma migrate deploy` для применения существующих миграций, а НЕ `prisma migrate dev`!
+
 ```bash
 # Генерация Prisma клиента
 npx prisma generate
 
-# Применение миграций
-npx prisma migrate dev
+# Применение существующих миграций (для новой настройки БД)
+npx prisma migrate deploy
 
 # Заполнение базы тестовыми данными (рекомендуется)
 npm run seed
 ```
+
+**Примечание:** 
+- `prisma migrate deploy` - применяет существующие миграции (используйте для настройки БД)
+- `prisma migrate dev` - создает новую миграцию (используйте только при изменении схемы!)
+
+Если у вас проблемы с миграциями, см. [SETUP_FOR_NEW_DEVELOPER.md](./SETUP_FOR_NEW_DEVELOPER.md)
 
 #### Альтернативные команды для seed:
 
@@ -169,12 +186,16 @@ npx ts-node prisma/seed.ts
 npm install
 
 # 2. Настройка базы данных (Docker)
+# Проверьте, существует ли контейнер: docker ps -a | grep crm-postgres
+# Если нет, создайте с volume для сохранения данных:
 docker run --name crm-postgres \
   -e POSTGRES_PASSWORD=12345 \
   -e POSTGRES_USER=postgres \
   -e POSTGRES_DB=crm_beauty_db \
   -p 5433:5432 \
+  -v crm-postgres-data:/var/lib/postgresql/data \
   -d postgres:15
+# Если контейнер существует, но остановлен: docker start crm-postgres
 
 # 3. Настройка Redis (опционально, Docker)
 docker run --name crm-redis -p 6379:6379 -d redis:7-alpine
@@ -186,7 +207,10 @@ docker run --name crm-redis -p 6379:6379 -d redis:7-alpine
 # NODE_ENV=development
 
 # 5. Применение миграций
-npm run db:migrate
+# ⚠️ ВАЖНО: Используйте migrate deploy для применения существующих миграций!
+npx prisma generate
+npx prisma migrate deploy
+# НЕ используйте npm run db:migrate (это создаст новую миграцию!)
 
 # 6. Заполнение тестовыми данными
 npm run seed
@@ -217,7 +241,9 @@ npm start
 - `npm run lint:fix` - автоматическое исправление ошибок линтера
 - `npm run format` - форматирование кода с помощью Prettier
 - `npm run db:generate` - генерация Prisma клиента
-- `npm run db:migrate` - применение миграций
+- `npm run db:migrate` - создание новой миграции (только при изменении схемы!)
+- `npm run db:migrate:deploy` - применение существующих миграций (для настройки БД)
+- `npm run db:setup` - генерация клиента + применение миграций (удобно для новой настройки)
 - `npm run db:seed` - заполнение базы тестовыми данными через Prisma
 - `npm run seed` - запуск seed-скрипта (рекомендуется)
 - `npm run db:studio` - открыть Prisma Studio

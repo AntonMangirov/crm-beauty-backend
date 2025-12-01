@@ -181,3 +181,7 @@ interface MasterSettings {
 - Изменились только места создания `MasterSettings` - теперь через единую функцию
 
 
+
+
+
+
