@@ -192,9 +192,11 @@ export const ClientListItemSchema = z.object({
   name: z.string(),
   phone: z.string().nullable(),
   telegramUsername: z.string().nullable(),
+  firstVisit: z.date().nullable(), // Дата первого завершенного посещения
   lastVisit: z.date().nullable(), // Дата последнего завершенного посещения
   visitsCount: z.number(), // Количество завершенных посещений
   photosCount: z.number(), // Количество фото у клиента
+  notes: z.string().nullable(), // Заметки о клиенте
 });
 
 export type ClientListItem = z.infer<typeof ClientListItemSchema>;
@@ -205,6 +207,11 @@ export const UpdateClientSchema = z.object({
     .string()
     .min(1, 'Имя обязательно')
     .max(100, 'Имя слишком длинное')
+    .optional(),
+  notes: z
+    .string()
+    .max(2000, 'Заметки слишком длинные (максимум 2000 символов)')
+    .nullable()
     .optional(),
 });
 

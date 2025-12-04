@@ -803,7 +803,11 @@ export async function getClients(req: Request, res: Response) {
     }
 
     // Поддерживаем поиск по имени или телефону через query параметры
-    const { name, phone } = req.query as { name?: string; phone?: string };
+    const { name, phone, sortBy } = req.query as {
+      name?: string;
+      phone?: string;
+      sortBy?: 'name' | 'lastVisit';
+    };
 
     const whereClause: Prisma.ClientWhereInput = {
       masterId: userId,
@@ -845,6 +849,7 @@ export async function getClients(req: Request, res: Response) {
         name: true,
         phone: true,
         telegramUsername: true,
+        notes: true,
         appointments: {
           where: {
             masterId: userId,
@@ -856,6 +861,7 @@ export async function getClients(req: Request, res: Response) {
           orderBy: {
             startAt: 'desc',
           },
+          // Получаем все записи для вычисления firstVisit и lastVisit
         },
         _count: {
           select: {
@@ -863,14 +869,21 @@ export async function getClients(req: Request, res: Response) {
           },
         },
       },
+      // Сортировка по умолчанию по имени, но может быть переопределена после вычисления полей
       orderBy: {
         name: 'asc',
       },
     });
     const clientsWithStats = clients.map(client => {
+      const appointments = client.appointments;
       const lastVisit =
-        client.appointments.length > 0 ? client.appointments[0].startAt : null;
-      const visitsCount = client.appointments.length;
+        appointments.length > 0 ? appointments[0].startAt : null;
+      // Первое посещение - это последний элемент массива (самая ранняя дата)
+      const firstVisit =
+        appointments.length > 0
+          ? appointments[appointments.length - 1].startAt
+          : null;
+      const visitsCount = appointments.length;
       const photosCount = client._count.photos;
 
       return {
@@ -878,13 +891,33 @@ export async function getClients(req: Request, res: Response) {
         name: client.name,
         phone: client.phone,
         telegramUsername: client.telegramUsername,
+        firstVisit,
         lastVisit,
         visitsCount,
         photosCount,
+        notes: client.notes,
       };
     });
 
-    const response = clientsWithStats.map(client =>
+    // Применяем сортировку после вычисления полей
+    let sortedClients = clientsWithStats;
+    if (sortBy === 'lastVisit') {
+      sortedClients = [...clientsWithStats].sort((a, b) => {
+        // Клиенты без визитов идут в конец
+        if (!a.lastVisit && !b.lastVisit) return 0;
+        if (!a.lastVisit) return 1;
+        if (!b.lastVisit) return -1;
+        // Сортировка по убыванию (новые визиты первыми)
+        return b.lastVisit.getTime() - a.lastVisit.getTime();
+      });
+    } else if (sortBy === 'name') {
+      sortedClients = [...clientsWithStats].sort((a, b) => {
+        return a.name.localeCompare(b.name, 'ru', { sensitivity: 'base' });
+      });
+    }
+    // Если sortBy не указан, используем сортировку по умолчанию (по имени)
+
+    const response = sortedClients.map(client =>
       ClientListItemSchema.parse(client)
     );
 
@@ -1106,13 +1139,21 @@ export async function getClientHistory(req: Request, res: Response) {
       where: {
         clientId,
       },
+      select: {
+        id: true,
+        url: true,
+        description: true,
+        createdAt: true,
+        appointmentId: true,
+      },
       orderBy: {
         createdAt: 'asc',
       },
     });
 
-    // Привязываем фото к записям по дате создания: фото относится к записи,
-    // если оно создано в день записи или после неё, но до следующей записи
+    // Привязываем фото к записям:
+    // 1. Сначала по appointmentId (если фото привязано к конкретной записи)
+    // 2. Затем по дате создания (fallback для старых фото без appointmentId)
     const historyItems = appointments.map((appointment, index) => {
       const appointmentDate = new Date(appointment.startAt);
       appointmentDate.setHours(0, 0, 0, 0);
@@ -1121,10 +1162,19 @@ export async function getClientHistory(req: Request, res: Response) {
       const periodEnd = nextAppointment
         ? new Date(nextAppointment.startAt)
         : new Date();
+
       const relatedPhotos = allPhotos
         .filter(photo => {
-          const photoDate = new Date(photo.createdAt);
-          return photoDate >= appointmentDate && photoDate <= periodEnd;
+          // Привязка по appointmentId (приоритет)
+          if (photo.appointmentId === appointment.id) {
+            return true;
+          }
+          // Fallback: привязка по дате для фото без appointmentId
+          if (!photo.appointmentId) {
+            const photoDate = new Date(photo.createdAt);
+            return photoDate >= appointmentDate && photoDate <= periodEnd;
+          }
+          return false;
         })
         .map(photo => ({
           id: photo.id,
@@ -1212,6 +1262,13 @@ export async function updateClient(req: Request, res: Response) {
     if (validatedData.name !== undefined) {
       // Если имя пустое или только пробелы, ставим прочерк
       updateData.name = validatedData.name.trim() || '-';
+    }
+    if (validatedData.notes !== undefined) {
+      // Разрешаем null и пустую строку (будет сохранена как null)
+      updateData.notes =
+        validatedData.notes === null || validatedData.notes.trim() === ''
+          ? null
+          : validatedData.notes.trim();
     }
 
     const updatedClient = await prisma.client.update({

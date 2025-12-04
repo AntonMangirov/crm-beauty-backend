@@ -57,7 +57,7 @@ npm install
 
 #### Вариант A: Использование Docker (рекомендуется)
 
-**⚠️ Важно для новых разработчиков:** Если у вас проблемы с миграциями, см. [SETUP_FOR_NEW_DEVELOPER.md](./SETUP_FOR_NEW_DEVELOPER.md)
+**⚠️ Важно для новых разработчиков:** Если у вас проблемы с миграциями, см. [SETUP_FOR_NEW_DEVELOPER.md](./docs/guides/SETUP_FOR_NEW_DEVELOPER.md)
 
 ```bash
 # Проверьте, существует ли контейнер
@@ -165,7 +165,7 @@ npm run seed
 - `prisma migrate deploy` - применяет существующие миграции (используйте для настройки БД)
 - `prisma migrate dev` - создает новую миграцию (используйте только при изменении схемы!)
 
-Если у вас проблемы с миграциями, см. [SETUP_FOR_NEW_DEVELOPER.md](./SETUP_FOR_NEW_DEVELOPER.md)
+Если у вас проблемы с миграциями, см. [SETUP_FOR_NEW_DEVELOPER.md](./docs/guides/SETUP_FOR_NEW_DEVELOPER.md)
 
 #### Альтернативные команды для seed:
 
