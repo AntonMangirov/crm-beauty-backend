@@ -8,6 +8,7 @@ import {
   getMinutesDifference,
   convertUTCToMasterTZ,
   convertMasterTZToUTC,
+  getCurrentTimeInTimezone,
 } from './timeUtils';
 
 export interface WorkInterval {
@@ -508,13 +509,62 @@ export function calculateAvailableSlots(
   );
 
   const availableSlots: string[] = [];
-  const now = new Date();
+
+  // Определяем текущее время для сравнения
+  // Все слоты хранятся в UTC, поэтому сравниваем с текущим UTC временем
+  const nowUTC = new Date();
+
+  // Проверяем, запрашивается ли сегодняшняя дата в часовом поясе мастера
+  const { dateStr: todayInMasterTZ } = convertUTCToMasterTZ(nowUTC, timezone);
+  const isToday = date === todayInMasterTZ;
+
+  // Для сегодняшней даты используем текущее UTC время напрямую
+  // Это правильно, так как все слоты уже в UTC
+  const now = nowUTC;
+
+  // Дополнительная проверка: если date не совпадает с todayInMasterTZ, но это может быть сегодня
+  // в другом часовом поясе, проверяем через сравнение дат в UTC
+  // Это нужно для случаев, когда date приходит в формате UTC, а не в часовом поясе мастера
+  const dateInUTC = new Date(date + 'T00:00:00.000Z');
+  const todayInUTC = new Date(
+    nowUTC.toISOString().split('T')[0] + 'T00:00:00.000Z'
+  );
+  const isTodayByUTC = dateInUTC.getTime() === todayInUTC.getTime();
+
+  // Используем более строгую проверку: либо по часовому поясу мастера, либо по UTC
+  const isTodayFinal = isToday || isTodayByUTC;
+
+  // Отладочная информация (можно убрать после проверки)
+  // console.log('DEBUG calculateAvailableSlots:', {
+  //   date,
+  //   todayInMasterTZ,
+  //   isToday,
+  //   nowUTC: nowUTC.toISOString(),
+  //   timezone,
+  // });
 
   for (const workInterval of workIntervals) {
     const workStart = convertMasterTZToUTC(date, workInterval.start, timezone);
     const workEnd = convertMasterTZToUTC(date, workInterval.end, timezone);
 
+    // Пропускаем рабочие интервалы, которые уже закончились
     if (workEnd.getTime() <= now.getTime()) continue;
+
+    // Для сегодняшней даты: если рабочий интервал еще не начался (workStart > now),
+    // это нормально - мы начнем генерацию с workStart, который в будущем
+    // Но если workStart < now, значит рабочий день уже начался, и мы должны начать с now
+    // Это обрабатывается дальше в коде при генерации слотов
+
+    // Отладочная информация (можно убрать после проверки)
+    // if (isToday) {
+    //   console.log('DEBUG workInterval:', {
+    //     workInterval: `${workInterval.start}-${workInterval.end}`,
+    //     workStartUTC: workStart.toISOString(),
+    //     workEndUTC: workEnd.toISOString(),
+    //     nowUTC: now.toISOString(),
+    //     workStartAfterNow: workStart.getTime() > now.getTime(),
+    //   });
+    // }
 
     const freeIntervals = subtractBusyIntervals(
       workStart,
@@ -526,24 +576,59 @@ export function calculateAvailableSlots(
       const freeStart = freeInterval.start;
       const freeEnd = freeInterval.end;
 
-      const effectiveStart = new Date(
-        Math.max(freeStart.getTime(), now.getTime())
-      );
+      // Определяем начальную точку для генерации слотов
+      // Для сегодняшней даты: используем максимум из начала свободного интервала и текущего времени
+      // Для будущих дат: используем начало свободного интервала
+      let effectiveStart = freeStart;
+      if (isTodayFinal) {
+        // Для сегодняшней даты начинаем с текущего времени, если свободный интервал начался раньше
+        effectiveStart = new Date(Math.max(freeStart.getTime(), now.getTime()));
+      }
+
+      // Округляем до шага слота
       let slotStart = roundUpToSlotStep(effectiveStart, slotStepMinutes);
 
-      if (slotStart.getTime() < freeStart.getTime())
-        slotStart = roundUpToSlotStep(freeStart, slotStepMinutes);
+      // Для сегодняшней даты: критически важно - слот не должен быть в прошлом
+      // Проверяем это ДО проверки freeStart, чтобы не перезаписать правильное время
+      if (isTodayFinal) {
+        // Если слот в прошлом, используем округленное текущее время
+        if (slotStart.getTime() < now.getTime()) {
+          const roundedNow = roundUpToSlotStep(now, slotStepMinutes);
+          // Используем максимум из округленного текущего времени и начала свободного интервала
+          slotStart = new Date(
+            Math.max(roundedNow.getTime(), freeStart.getTime())
+          );
+        }
+        // Финальная проверка: если слот все еще в прошлом, пропускаем интервал
+        if (slotStart.getTime() < now.getTime()) {
+          continue;
+        }
+      }
 
-      if (slotStart.getTime() < now.getTime()) {
-        const roundedNow = roundUpToSlotStep(now, slotStepMinutes);
-        slotStart =
-          roundedNow.getTime() > freeStart.getTime()
-            ? roundedNow
-            : roundUpToSlotStep(freeStart, slotStepMinutes);
+      // Убеждаемся, что слот не раньше начала свободного интервала
+      // (это может произойти после округления или корректировки для isTodayFinal)
+      if (slotStart.getTime() < freeStart.getTime()) {
+        slotStart = roundUpToSlotStep(freeStart, slotStepMinutes);
+        // Для сегодняшней даты: если после этого слот в прошлом, пропускаем интервал
+        if (isTodayFinal && slotStart.getTime() < now.getTime()) {
+          continue;
+        }
+      }
+
+      // Финальная проверка перед циклом: для сегодняшней даты слот не должен быть в прошлом
+      if (isTodayFinal && slotStart.getTime() < now.getTime()) {
+        continue;
       }
 
       while (slotStart.getTime() < freeEnd.getTime()) {
+        // Убеждаемся, что слот не раньше начала свободного интервала
         if (slotStart.getTime() < freeStart.getTime()) {
+          slotStart = addMinutesToUTC(slotStart, slotStepMinutes);
+          continue;
+        }
+
+        // Для сегодняшней даты: критически важно - каждый слот проверяем на то, что он не в прошлом
+        if (isTodayFinal && slotStart.getTime() < now.getTime()) {
           slotStart = addMinutesToUTC(slotStart, slotStepMinutes);
           continue;
         }
@@ -880,17 +965,30 @@ export function isValidBookingTimeForMaster(
     timezone,
   } = masterSettings;
 
+  // Получаем локальные компоненты времени мастера
+  const { dateStr } = convertUTCToMasterTZ(startTimeUTC, timezone);
+  const { dateStr: todayInMasterTZ } = convertUTCToMasterTZ(
+    new Date(),
+    timezone
+  );
+
   // Проверяем, что время не в прошлом
-  const now = new Date();
-  if (startTimeUTC <= now) {
+  // Если запрашивается сегодняшняя дата, используем текущее время в часовом поясе мастера
+  let now: Date;
+  if (dateStr === todayInMasterTZ) {
+    // Для сегодняшней даты используем текущее время в часовом поясе мастера
+    now = getCurrentTimeInTimezone(timezone);
+  } else {
+    // Для будущих дат используем UTC время (это не критично, так как дата в будущем)
+    now = new Date();
+  }
+
+  if (startTimeUTC.getTime() <= now.getTime()) {
     return {
       ok: false,
       reason: 'Время записи не может быть в прошлом',
     };
   }
-
-  // Получаем локальные компоненты времени мастера
-  const { dateStr } = convertUTCToMasterTZ(startTimeUTC, timezone);
 
   // Проверяем, что день - рабочий (есть рабочие интервалы для этого дня)
   if (workIntervals.length === 0) {

@@ -9,27 +9,36 @@ import {
 import {
   getMe,
   updateProfile,
-  getAppointments,
   uploadPhoto,
+} from '../controllers/ProfileController';
+import {
+  getAppointments,
   updateAppointmentStatus,
   rescheduleAppointment,
+  getLastManualAppointments,
+} from '../controllers/AppointmentController';
+import {
   getClients,
   getClientHistory,
   updateClient,
+} from '../controllers/ClientController';
+import {
   uploadAppointmentPhotos,
   deleteAppointmentPhoto,
-  getAnalytics,
+} from '../controllers/PhotoController';
+import { getAnalytics } from '../controllers/AnalyticsController';
+import {
   getPortfolio,
   uploadPortfolioPhoto,
   deletePortfolioPhoto,
-  getLastManualAppointments,
-  getTopServices,
+} from '../controllers/PortfolioController';
+import {
   changePassword,
   changeEmail,
   changePhone,
-  getSchedule,
-  updateSchedule,
-} from '../controllers/meController';
+} from '../controllers/AccountController';
+import { getSchedule, updateSchedule } from '../controllers/ScheduleController';
+import { getTopServices } from '../controllers/TopServicesController';
 import {
   getServices,
   createService,

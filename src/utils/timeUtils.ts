@@ -3,6 +3,15 @@
  * Политика: все время хранится в UTC, фронт работает с ISO строками
  */
 
+// Динамический импорт tz-lookup с fallback
+let tzlookup: ((lat: number, lng: number) => string) | null = null;
+try {
+  tzlookup = require('tz-lookup') as (lat: number, lng: number) => string;
+} catch {
+  // Пакет не установлен, будет использоваться fallback логика
+  tzlookup = null;
+}
+
 /**
  * Преобразует ISO строку в UTC Date объект
  * @param isoString - ISO строка времени (например: "2024-01-01T10:00:00.000Z")
@@ -337,6 +346,149 @@ export function convertMasterTZToUTC(
 
     // Корректируем UTC дату
     candidateUTC = new Date(candidateUTC.getTime() + diffMinutes * 60 * 1000);
+  }
+
+  return candidateUTC;
+}
+
+/**
+ * Определяет часовой пояс по координатам (широта/долгота)
+ *
+ * @param lat - Широта (latitude)
+ * @param lng - Долгота (longitude)
+ * @returns IANA timezone identifier (например, 'Europe/Moscow', 'America/New_York') или null если координаты невалидны
+ */
+export function getTimezoneFromCoordinates(
+  lat: number | null | undefined,
+  lng: number | null | undefined
+): string | null {
+  if (lat === null || lat === undefined || lng === null || lng === undefined) {
+    return null;
+  }
+
+  const latNum = typeof lat === 'string' ? parseFloat(lat) : lat;
+  const lngNum = typeof lng === 'string' ? parseFloat(lng) : lng;
+
+  if (isNaN(latNum) || isNaN(lngNum)) {
+    return null;
+  }
+
+  // Проверяем валидность координат
+  if (latNum < -90 || latNum > 90 || lngNum < -180 || lngNum > 180) {
+    return null;
+  }
+
+  // Если пакет tz-lookup доступен, используем его
+  if (tzlookup) {
+    try {
+      return tzlookup(latNum, lngNum);
+    } catch (_error) {
+      // Если произошла ошибка, используем fallback логику
+    }
+  }
+
+  // Fallback: определяем часовой пояс по долготе для основных регионов России
+  // Это упрощенная логика, которая работает для большинства случаев в России
+  if (latNum >= 41 && latNum <= 82 && lngNum >= 19 && lngNum <= 180) {
+    // Россия и соседние регионы
+    // Приблизительное определение часового пояса по долготе
+    // Каждый часовой пояс примерно 15 градусов долготы
+    const _timezoneOffset = new Date().getTimezoneOffset();
+
+    // Основные часовые пояса России
+    if (lngNum >= 19 && lngNum < 30) {
+      return 'Europe/Kaliningrad'; // UTC+2
+    } else if (lngNum >= 30 && lngNum < 38) {
+      return 'Europe/Moscow'; // UTC+3
+    } else if (lngNum >= 38 && lngNum < 53) {
+      return 'Europe/Samara'; // UTC+4
+    } else if (lngNum >= 53 && lngNum < 68) {
+      return 'Asia/Yekaterinburg'; // UTC+5
+    } else if (lngNum >= 68 && lngNum < 83) {
+      return 'Asia/Omsk'; // UTC+6
+    } else if (lngNum >= 83 && lngNum < 98) {
+      return 'Asia/Krasnoyarsk'; // UTC+7
+    } else if (lngNum >= 98 && lngNum < 113) {
+      return 'Asia/Irkutsk'; // UTC+8
+    } else if (lngNum >= 113 && lngNum < 128) {
+      return 'Asia/Chita'; // UTC+9
+    } else if (lngNum >= 128 && lngNum < 143) {
+      return 'Asia/Vladivostok'; // UTC+10
+    } else if (lngNum >= 143 && lngNum < 158) {
+      return 'Asia/Magadan'; // UTC+11
+    } else if (lngNum >= 158 && lngNum <= 180) {
+      return 'Asia/Kamchatka'; // UTC+12
+    }
+  }
+
+  // Для других регионов возвращаем null, будет использоваться fallback 'Europe/Moscow'
+  return null;
+}
+
+/**
+ * Получает текущее время в указанном часовом поясе
+ *
+ * @param timezone - Часовой пояс (IANA timezone identifier)
+ * @returns Date объект, представляющий текущее время в указанном часовом поясе
+ */
+export function getCurrentTimeInTimezone(timezone: string): Date {
+  const now = new Date();
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: timezone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  });
+
+  const parts = formatter.formatToParts(now);
+  const year = parseInt(parts.find(p => p.type === 'year')!.value);
+  const month = parseInt(parts.find(p => p.type === 'month')!.value) - 1; // месяцы 0-11
+  const day = parseInt(parts.find(p => p.type === 'day')!.value);
+  const hour = parseInt(parts.find(p => p.type === 'hour')!.value);
+  const minute = parseInt(parts.find(p => p.type === 'minute')!.value);
+  const second = parseInt(parts.find(p => p.type === 'second')!.value);
+
+  // Создаем строку даты/времени в формате, который можно распарсить
+  const dateTimeStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}T${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}:${String(second).padStart(2, '0')}`;
+
+  // Используем итеративный подход для получения правильного UTC времени
+  // Начинаем с предположения, что это UTC время
+  let candidateUTC = new Date(dateTimeStr + 'Z');
+
+  for (let i = 0; i < 10; i++) {
+    const formatterCheck = new Intl.DateTimeFormat('en-US', {
+      timeZone: timezone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false,
+    });
+
+    const partsCheck = formatterCheck.formatToParts(candidateUTC);
+    const actualHour = parseInt(partsCheck.find(p => p.type === 'hour')!.value);
+    const actualMinute = parseInt(
+      partsCheck.find(p => p.type === 'minute')!.value
+    );
+    const actualSecond = parseInt(
+      partsCheck.find(p => p.type === 'second')!.value
+    );
+
+    const desiredSeconds = hour * 3600 + minute * 60 + second;
+    const actualSeconds = actualHour * 3600 + actualMinute * 60 + actualSecond;
+    const diffSeconds = desiredSeconds - actualSeconds;
+
+    if (Math.abs(diffSeconds) < 2) {
+      break;
+    }
+
+    candidateUTC = new Date(candidateUTC.getTime() + diffSeconds * 1000);
   }
 
   return candidateUTC;

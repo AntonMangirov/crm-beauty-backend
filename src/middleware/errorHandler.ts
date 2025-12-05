@@ -19,7 +19,7 @@ export const errorHandler = (
   error: Error,
   req: Request,
   res: Response,
-  // eslint-disable-next-line no-unused-vars
+
   next?: (_err: Error) => void
 ): void => {
   // Если ответ уже был отправлен, передаем ошибку дальше
