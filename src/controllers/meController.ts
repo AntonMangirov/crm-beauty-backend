@@ -340,23 +340,50 @@ export async function getAppointments(req: Request, res: Response) {
     });
 
     // Привязываем фото к записям по дате создания
+    // Сначала привязываем по appointmentId (если есть), затем по дате
+    // Используем ту же логику, что и в getClientHistory для консистентности
     const appointmentsWithPhotos = appointments.map((appointment, index) => {
       const appointmentDate = new Date(appointment.startAt);
-      appointmentDate.setHours(0, 0, 0, 0);
+      appointmentDate.setHours(0, 0, 0, 0); // Начало дня записи
 
-      const nextAppointment = appointments[index + 1];
-      const periodEnd = nextAppointment
-        ? new Date(nextAppointment.startAt)
-        : new Date();
+      // Находим следующую запись того же клиента по времени (не по индексу в массиве!)
+      // Записи отсортированы по startAt DESC, поэтому следующая запись имеет более раннюю дату
+      const nextAppointment = appointments.find((apt, idx) => {
+        if (idx <= index || apt.clientId !== appointment.clientId) {
+          return false;
+        }
+        const nextAppointmentDate = new Date(apt.startAt);
+        nextAppointmentDate.setHours(0, 0, 0, 0);
+        return nextAppointmentDate < appointmentDate;
+      });
+
+      // Период для привязки фото: от начала дня записи до начала дня следующей записи этого клиента
+      // Если следующей записи нет, используем текущую дату
+      let periodEnd: Date;
+      if (nextAppointment) {
+        periodEnd = new Date(nextAppointment.startAt);
+        periodEnd.setHours(0, 0, 0, 0);
+      } else {
+        periodEnd = new Date();
+      }
 
       const relatedPhotos = allPhotos
         .filter(photo => {
-          const photoDate = new Date(photo.createdAt);
-          return (
-            photo.clientId === appointment.clientId &&
-            photoDate >= appointmentDate &&
-            photoDate <= periodEnd
-          );
+          // Сначала проверяем привязку по appointmentId (приоритет)
+          if (photo.appointmentId === appointment.id) {
+            return true;
+          }
+          // Fallback: привязка по дате для фото без appointmentId
+          // Фото должно быть создано между началом дня записи и началом дня следующей записи этого клиента
+          if (!photo.appointmentId) {
+            const photoDate = new Date(photo.createdAt);
+            return (
+              photo.clientId === appointment.clientId &&
+              photoDate >= appointmentDate &&
+              photoDate <= periodEnd
+            );
+          }
+          return false;
         })
         .map(photo => ({
           id: photo.id,
@@ -1372,6 +1399,7 @@ export async function uploadAppointmentPhotos(req: Request, res: Response) {
         const photo = await prisma.photo.create({
           data: {
             clientId: appointment.clientId,
+            appointmentId: appointmentId, // Привязываем фото к конкретной записи
             url: imageUrl,
             description: description || null,
           },
