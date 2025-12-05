@@ -17,7 +17,11 @@ import {
   ServiceNotFoundError,
   TimeSlotConflictError,
 } from '../errors/BusinessErrors';
-import { addMinutesToUTC, formatUTCToISO } from '../utils/timeUtils';
+import {
+  addMinutesToUTC,
+  formatUTCToISO,
+  getTimezoneFromCoordinates,
+} from '../utils/timeUtils';
 import { TimeslotsResponseSchema } from '../schemas/public';
 import {
   calculateAvailableSlots,
@@ -190,6 +194,8 @@ export async function bookPublicSlot(req: Request, res: Response) {
         breaks: true,
         defaultBufferMinutes: true,
         slotStepMinutes: true,
+        lat: true,
+        lng: true,
       },
     });
     if (!master) {
@@ -332,8 +338,28 @@ export async function bookPublicSlot(req: Request, res: Response) {
         ? durationOverride
         : service.durationMin;
 
+    // Определяем часовой пояс мастера из его координат
+    // Если координаты есть - определяем часовой пояс, иначе используем fallback
+    let timezone = 'Europe/Moscow'; // fallback значение
+    if (master.lat && master.lng) {
+      const latNum =
+        typeof master.lat === 'string'
+          ? parseFloat(master.lat)
+          : Number(master.lat);
+      const lngNum =
+        typeof master.lng === 'string'
+          ? parseFloat(master.lng)
+          : Number(master.lng);
+      const timezoneFromCoords = getTimezoneFromCoordinates(latNum, lngNum);
+      if (timezoneFromCoords) {
+        timezone = timezoneFromCoords;
+      }
+    } else {
+      // Если координат нет, используем часовой пояс из запроса (если есть)
+      timezone = req.timezone || 'Europe/Moscow';
+    }
+
     // Получаем настройки мастера для даты бронирования
-    const timezone = req.timezone || 'Europe/Moscow';
     const masterSettings = getMasterDailySchedule(
       master,
       start,
@@ -897,6 +923,8 @@ export async function getTimeslots(req: Request, res: Response) {
         breaks: true,
         defaultBufferMinutes: true,
         slotStepMinutes: true,
+        lat: true,
+        lng: true,
       },
     });
 
@@ -1014,8 +1042,28 @@ export async function getTimeslots(req: Request, res: Response) {
       })
     );
 
+    // Определяем часовой пояс мастера из его координат
+    // Если координаты есть - определяем часовой пояс, иначе используем fallback
+    let timezone = 'Europe/Moscow'; // fallback значение
+    if (master.lat && master.lng) {
+      const latNum =
+        typeof master.lat === 'string'
+          ? parseFloat(master.lat)
+          : Number(master.lat);
+      const lngNum =
+        typeof master.lng === 'string'
+          ? parseFloat(master.lng)
+          : Number(master.lng);
+      const timezoneFromCoords = getTimezoneFromCoordinates(latNum, lngNum);
+      if (timezoneFromCoords) {
+        timezone = timezoneFromCoords;
+      }
+    } else {
+      // Если координат нет, используем часовой пояс из запроса (если есть)
+      timezone = req.timezone || 'Europe/Moscow';
+    }
+
     // Получаем настройки мастера для конкретной даты
-    const timezone = req.timezone || 'Europe/Moscow';
     const masterSettings = getMasterDailySchedule(
       master,
       targetDateStr,

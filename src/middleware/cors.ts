@@ -22,12 +22,10 @@ const devOrigins = [
   'http://127.0.0.1:8080',
 ];
 
-/* eslint-disable no-unused-vars */
 const originCheck = (
   origin: string | undefined,
   callback: (err: Error | null, allow?: boolean) => void
 ) => {
-  /* eslint-enable no-unused-vars */
   if (!origin) {
     return callback(null, true);
   }

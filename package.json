@@ -60,6 +60,7 @@
     "multer": "^2.0.2",
     "pino": "^9.6.0",
     "pino-pretty": "^11.2.2",
+    "tz-lookup": "^6.1.7",
     "zod": "^4.1.11"
   },
   "devDependencies": {
