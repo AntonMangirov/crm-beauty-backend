@@ -60,6 +60,7 @@ describe('Notification Queue Integration', () => {
 
     // Проверяем, что все обязательные поля присутствуют
     expect(notificationData).toHaveProperty('appointmentId');
+    // clientName теперь опциональное поле
     expect(notificationData).toHaveProperty('clientName');
     expect(notificationData).toHaveProperty('clientPhone');
     expect(notificationData).toHaveProperty('masterName');

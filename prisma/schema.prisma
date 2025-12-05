@@ -17,8 +17,22 @@ model User {
   description   String?
   photoUrl      String?
   address       String?
+  lat           Decimal?      @db.Decimal(10, 8)  // Широта (latitude)
+  lng           Decimal?      @db.Decimal(11, 8)  // Долгота (longitude)
+  vkUrl         String?       // Ссылка на ВКонтакте
+  telegramUrl  String?       // Ссылка на Telegram
+  whatsappUrl  String?       // Ссылка на WhatsApp
+  backgroundImageUrl String?  // Фоновое изображение для карточки мастера
+  rating       Decimal?      @db.Decimal(3, 2)   // Средняя оценка из отзывов (0.00 - 5.00)
+  refreshToken String?       @unique            // Refresh token для долгосрочной аутентификации
+  refreshTokenExpires DateTime?                  // Срок действия refresh token
   isActive      Boolean       @default(true)
   role          UserRole      @default(MASTER)
+  // Новые поля для расписания работы и настроек слотов
+  workSchedule  Json?         // Расписание работы: массив { dayOfWeek: number, intervals: [{ from: string, to: string }] }
+  breaks        Json?         // Перерывы мастера: массив { from: string, to: string, reason?: string }
+  defaultBufferMinutes Int?   @default(15)      // Буфер после услуги по умолчанию (минуты)
+  slotStepMinutes Int?        @default(15)       // Шаг генерации слотов (минуты): 5, 10, 15
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
 
@@ -26,6 +40,9 @@ model User {
   clients       Client[]
   appointments  Appointment[]
   integrations  Integration[]
+  reviews       Review[]
+  portfolioPhotos PortfolioPhoto[]
+  passwordResetTokens PasswordResetToken[]
 
   @@index([email])
   @@index([slug])
@@ -39,6 +56,7 @@ model Service {
   price       Decimal     @db.Decimal(10, 2)
   durationMin Int
   description String?
+  photoUrl    String?     // Фото услуги
   isActive    Boolean     @default(true)
   createdAt   DateTime    @default(now())
   updatedAt   DateTime    @updatedAt
@@ -51,16 +69,17 @@ model Service {
 }
 
 model Client {
-  id          String      @id @default(cuid())
-  masterId    String
-  name        String
-  phone       String?
-  email       String?
-  allergies   String?
-  notes       String?
-  isActive    Boolean     @default(true)
-  createdAt   DateTime    @default(now())
-  updatedAt   DateTime    @updatedAt
+  id              String      @id @default(cuid())
+  masterId        String
+  name            String
+  phone           String?
+  telegramUsername String?
+  email           String?
+  allergies       String?
+  notes           String?
+  isActive        Boolean     @default(true)
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
 
   master      User        @relation(fields: [masterId], references: [id], onDelete: Cascade)
   appointments Appointment[]
@@ -68,6 +87,7 @@ model Client {
 
   @@index([masterId])
   @@index([phone])
+  @@index([telegramUsername])
   @@index([email])
   @@index([isActive])
 }
@@ -84,15 +104,21 @@ model Appointment {
   notes            String?
   price            Decimal?   @db.Decimal(10, 2)
   notificationJobId String?   // ID задачи уведомления в очереди
+  // Снапшоты данных услуги на момент создания записи (для сохранения истории)
+  serviceName     String?    // Название услуги на момент записи
+  serviceDuration Int?       // Длительность услуги на момент записи (минуты)
+  servicePrice    Decimal?   @db.Decimal(10, 2) // Цена услуги на момент записи
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
 
   master     User       @relation(fields: [masterId], references: [id], onDelete: Cascade)
-  client     Client     @relation(fields: [clientId], references: [id], onDelete: Cascade)
-  service    Service    @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  client     Client     @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  service    Service    @relation(fields: [serviceId], references: [id], onDelete: Restrict)
+  photos     Photo[]
 
   @@index([masterId])
   @@index([clientId])
+  @@index([serviceId])
   @@index([startAt])
   @@index([status])
   @@index([createdAt])
@@ -101,13 +127,16 @@ model Appointment {
 model Photo {
   id        String   @id @default(cuid())
   clientId  String
+  appointmentId String? // Опциональная привязка к конкретной записи
   url       String
   description String?
   createdAt DateTime @default(now())
 
-  client    Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  client    Client   @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  appointment Appointment? @relation(fields: [appointmentId], references: [id], onDelete: SetNull)
 
   @@index([clientId])
+  @@index([appointmentId])
   @@index([createdAt])
 }
 
@@ -154,4 +183,57 @@ enum IntegrationType {
   VK
   WHATSAPP
   GOOGLE_CALENDAR
+}
+
+model Review {
+  id        String   @id @default(cuid())
+  masterId  String
+  authorName String
+  rating    Int      // Оценка от 1 до 5
+  text      String   @db.Text
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  master    User     @relation(fields: [masterId], references: [id], onDelete: Cascade)
+
+  @@index([masterId])
+  @@index([createdAt])
+}
+
+model PortfolioPhoto {
+  id        String   @id @default(cuid())
+  masterId  String
+  url       String
+  description String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  master    User     @relation(fields: [masterId], references: [id], onDelete: Cascade)
+
+  @@index([masterId])
+  @@index([createdAt])
+}
+
+model PasswordResetToken {
+  id        String   @id @default(cuid())
+  userId    String
+  token     String   @unique
+  code      String   // Код для SMS/Email (6 цифр)
+  type      PasswordResetType // EMAIL или PHONE
+  expiresAt DateTime
+  used      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([token])
+  @@index([code])
+  @@index([expiresAt])
+  @@index([used])
+}
+
+enum PasswordResetType {
+  EMAIL
+  PHONE
 }

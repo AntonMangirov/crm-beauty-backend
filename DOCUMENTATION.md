@@ -35,7 +35,53 @@
 ### Публичные маршруты
 
 - `GET /api/public/:slug` — профиль мастера по слагу
+  - Ответ:
+    ```json
+    {
+      "slug": "string",
+      "name": "string",
+      "photoUrl": "string | null",
+      "description": "string | null",
+      "address": "string | null",
+      "lat": "number | null",
+      "lng": "number | null",
+      "services": [
+        {
+          "id": "string",
+          "name": "string",
+          "price": "string",
+          "durationMin": number
+        }
+      ]
+    }
+    ```
+- `GET /api/public/:slug/timeslots?date&serviceId` — получение доступных временных слотов
+  - Параметры запроса:
+    - `date` (опционально) — дата в формате YYYY-MM-DD (по умолчанию завтра)
+    - `serviceId` (опционально) — ID услуги для учёта её длительности
+  - Ответ:
+    ```json
+    {
+      "available": [
+        "2025-11-06T13:00:00.000Z",
+        "2025-11-06T14:00:00.000Z",
+        "2025-11-06T16:00:00.000Z"
+      ]
+    }
+    ```
+  - Логика:
+    - Генерирует слоты с 9:00 до 18:00 UTC
+    - Исключает занятые временные слоты (существующие записи)
+    - Учитывает длительность услуги если указана
+    - Пропускает слоты в прошлом
 - `POST /api/public/:slug/book` — создание записи клиента к мастеру
+  - Требует `recaptchaToken` в теле запроса (защита от ботов)
+  - Проверка выполняется автоматически через Google reCAPTCHA v3
+  - Валидация:
+    - **Телефон**: проверка формата российского номера (+7, 8, 7)
+    - **Услуга**: проверка существования, активности и принадлежности мастеру
+    - **Дата**: проверка что дата в будущем, в рабочих часах (9:00-18:00 UTC), в рабочие дни (пн-пт), минимум через 2 часа, максимум через 30 дней
+  - См. `src/utils/RECAPTCHA_README.md` для настройки reCAPTCHA
 
 ### Услуги
 
@@ -73,7 +119,31 @@ Authorization: Bearer <token>
 
 - Helmet, CORS, очистка ввода, лимитер запросов. См. `src/middleware/security.ts`.
 
+### Приватные маршруты (требуют аутентификации)
+
+- `GET /api/users` — список всех пользователей (защищён, требует JWT)
+- `GET /api/appointments?dateFrom&dateTo` — список встреч мастера (см. раздел "Встречи")
+
 ### Статус сервера
 
 - `GET /api/health` — статус
 - `GET /api/db/status` — проверка соединения с БД
+
+### Конфигурация
+
+- `.env.example` — пример файла с переменными окружения
+  - `PORT` — порт сервера (по умолчанию 3000)
+  - `NODE_ENV` — окружение (development/production)
+  - `DATABASE_URL` — строка подключения к PostgreSQL
+  - `JWT_SECRET` — секретный ключ для JWT токенов
+  - `REDIS_URL` — URL для Redis (или `REDIS_HOST` + `REDIS_PORT`)
+  - `RECAPTCHA_SECRET_KEY` — секретный ключ для Google reCAPTCHA v3
+  - `RECAPTCHA_MIN_SCORE` — минимальный score для reCAPTCHA v3 (по умолчанию 0.5)
+
+### CORS
+
+Все эндпоинты настроены с CORS:
+
+- Публичные эндпоинты (`/api/public`) — более мягкая конфигурация
+- Приватные эндпоинты (`/api/auth`, `/api/appointments`, `/api/users`) — строгая конфигурация с credentials
+- Настройки в `src/middleware/cors.ts`

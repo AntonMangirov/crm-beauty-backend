@@ -1,7 +1,0 @@
-{
-  "name": "Тест Клиент",
-  "phone": "+7-999-123-45-67",
-  "serviceId": "invalid-service-id",
-  "startAt": "2024-12-25T10:00:00.000Z",
-  "comment": "Тестовая запись"
-}

@@ -1,11 +1,13 @@
 import Queue from 'bull';
 import { NotificationService } from './notificationService';
+import { logError, logInfo, logWarn } from '../utils/logger';
 
 // Интерфейс для данных уведомления
 export interface NotificationData {
   appointmentId: string;
-  clientName: string;
-  clientPhone: string;
+  clientName?: string; // Опционально, имя клиента
+  clientPhone?: string; // Опционально, так как может быть telegramUsername
+  clientTelegramUsername?: string; // Опционально, альтернатива телефону
   masterName: string;
   serviceName: string;
   startAt: string;
@@ -34,13 +36,8 @@ export const notificationQueue = new Queue('notification', {
 notificationQueue.process('send-booking-notification', async job => {
   const data: NotificationData = job.data;
 
-  console.log(`Processing notification for appointment ${data.appointmentId}`);
-
   try {
-    // Отправляем все типы уведомлений
     const results = await NotificationService.sendAllNotifications(data);
-
-    console.log('Notification results:', results);
 
     // Проверяем, что хотя бы одно уведомление отправилось
     const hasSuccess = results.sms || results.email || results.push;
@@ -55,8 +52,8 @@ notificationQueue.process('send-booking-notification', async job => {
       results,
     };
   } catch (error) {
-    console.error(
-      `Failed to send notification for appointment ${data.appointmentId}:`,
+    logError(
+      `Ошибка отправки уведомления для записи ${data.appointmentId}`,
       error
     );
     throw error;
@@ -65,15 +62,15 @@ notificationQueue.process('send-booking-notification', async job => {
 
 // Обработчики событий очереди
 notificationQueue.on('completed', job => {
-  console.log(`Job ${job.id} completed successfully`);
+  logInfo(`Задача ${job.id} выполнена успешно`);
 });
 
 notificationQueue.on('failed', (job, err) => {
-  console.error(`Job ${job?.id} failed:`, err);
+  logError(`Задача ${job?.id} завершилась с ошибкой`, err);
 });
 
 notificationQueue.on('stalled', job => {
-  console.warn(`Job ${job?.id} stalled`);
+  logWarn(`Задача ${job?.id} зависла`);
 });
 
 export default notificationQueue;
