@@ -28,6 +28,7 @@ export interface MasterSettings {
   minServiceDurationMinutes: number; // Минимальная длительность услуги для анти-простоя
   timezone: string; // Часовой пояс мастера (например, 'Europe/Moscow')
   autoBuffer?: boolean; // Автоматический межуслуговой буфер между любыми процедурами
+  slotCompression?: boolean; // Сжатие последовательных слотов (показывать только первый и последний)
 }
 
 export interface ExistingBooking {
@@ -65,28 +66,97 @@ function intervalsOverlap(
 }
 
 /**
- * Округляет время вверх до ближайшего шага слота
+ * Функция сжатия слотов: группирует последовательные слоты и показывает только первый и последний
+ * Это уменьшает количество отображаемых слотов в UI, улучшая UX
  */
-function roundUpToSlotStep(date: Date, slotStepMinutes: number): Date {
-  const rounded = new Date(date);
-  const minutes = rounded.getUTCMinutes();
-  const roundedMinutes = Math.ceil(minutes / slotStepMinutes) * slotStepMinutes;
+export function compressSlots(
+  slotsISO: string[],
+  slotStepMinutes: number
+): string[] {
+  if (!slotsISO || slotsISO.length <= 2) return slotsISO;
 
-  rounded.setUTCMinutes(roundedMinutes);
-  rounded.setUTCSeconds(0);
-  rounded.setUTCMilliseconds(0);
+  const slots = slotsISO
+    .map(s => new Date(s))
+    .sort((a, b) => a.getTime() - b.getTime());
+  const clusters: Date[][] = [];
+  let currentCluster: Date[] = [slots[0]];
 
-  // Если минут >= 60, добавляем час и сбрасываем минуты
-  if (rounded.getUTCMinutes() >= 60) {
-    rounded.setUTCHours(rounded.getUTCHours() + 1);
-    rounded.setUTCMinutes(0);
+  for (let i = 1; i < slots.length; i++) {
+    const prev = slots[i - 1];
+    const curr = slots[i];
+    const diffMinutes = (curr.getTime() - prev.getTime()) / 60000;
+
+    if (Math.abs(diffMinutes - slotStepMinutes) < 0.0001) {
+      currentCluster.push(curr);
+    } else {
+      clusters.push(currentCluster);
+      currentCluster = [curr];
+    }
+  }
+  clusters.push(currentCluster);
+
+  const resultDates: Date[] = [];
+  for (const cluster of clusters) {
+    if (cluster.length === 1) {
+      resultDates.push(cluster[0]);
+    } else {
+      // Первый и последний слот в кластере
+      resultDates.push(cluster[0]);
+      resultDates.push(cluster[cluster.length - 1]);
+    }
   }
 
-  return rounded;
+  // Уникальность и сортировка
+  const uniqueIso = Array.from(new Set(resultDates.map(d => d.toISOString())));
+  uniqueIso.sort((a, b) => new Date(a).getTime() - new Date(b).getTime());
+  return uniqueIso;
+}
+
+/**
+ * Округляет время вверх до ближайшего шага слота
+ * Исправленная версия с более точным округлением
+ */
+export function roundUpToSlotStep(date: Date, slotStepMinutes: number): Date {
+  const d = new Date(date.getTime());
+  // Используем UTC-based вычисления чтобы избежать смешения локальных и UTC минут
+  const minutes = d.getUTCMinutes();
+  const remainder = minutes % slotStepMinutes;
+
+  if (remainder !== 0) {
+    d.setUTCMinutes(minutes + (slotStepMinutes - remainder));
+  }
+
+  // Очищаем секунды и миллисекунды
+  d.setUTCSeconds(0);
+  d.setUTCMilliseconds(0);
+
+  // Если округление подняло минуты >= 60, Date корректно перенесёт час автоматически
+  return d;
+}
+
+/**
+ * Проверяет, пересекается ли интервал с перерывами
+ */
+function breaksOverlapOnUTC(
+  breaks: Break[],
+  dateStr: string,
+  timezone: string,
+  start: Date,
+  end: Date
+): boolean {
+  for (const br of breaks) {
+    const brStart = convertMasterTZToUTC(dateStr, br.start, timezone).getTime();
+    const brEnd = convertMasterTZToUTC(dateStr, br.end, timezone).getTime();
+    if (!(end.getTime() <= brStart || start.getTime() >= brEnd)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 /**
  * Объединяет и сортирует занятые интервалы (bookings + breaks + auto buffers)
+ * Улучшенная версия: учитывает перерывы при авто-буфере (не расширяет через breaks)
  */
 function mergeBusyIntervals(
   bookings: ExistingBooking[],
@@ -98,14 +168,14 @@ function mergeBusyIntervals(
 ): Array<{ start: Date; end: Date }> {
   const intervals: Array<{ start: Date; end: Date }> = [];
 
-  // Обрабатываем существующие записи с учетом буферов
+  // 1) Бронирования с буферами (по услуге или общему)
   const bookingsWithBuffers: Array<{ start: Date; end: Date }> = [];
 
   for (const booking of bookings) {
     const bookingStart = new Date(booking.start);
     let bookingEnd = new Date(booking.end);
 
-    // Определяем буфер для этой услуги
+    // Буфер для этой услуги (приоритет: service.bufferMinutes -> master.serviceBufferMinutes)
     let bufferMinutes = masterSettings.serviceBufferMinutes;
     if (booking.serviceId) {
       const service = servicesInfo.find(s => s.id === booking.serviceId);
@@ -114,102 +184,106 @@ function mergeBusyIntervals(
       }
     }
 
-    // Добавляем буфер после услуги
     bookingEnd = addMinutesToUTC(bookingEnd, bufferMinutes);
-
-    bookingsWithBuffers.push({
-      start: bookingStart,
-      end: bookingEnd,
-    });
+    bookingsWithBuffers.push({ start: bookingStart, end: bookingEnd });
   }
 
-  // Сортируем бронирования по времени начала
+  // Сортировка
   bookingsWithBuffers.sort((a, b) => a.start.getTime() - b.start.getTime());
 
-  // Если включен автоматический межуслуговой буфер, добавляем буферы между бронированиями
+  // 2) Авто-буфер: добавляем аккуратно, не "поглощая" перерывы
   if (masterSettings.autoBuffer) {
     const autoBufferMinutes = masterSettings.serviceBufferMinutes;
-
-    // Создаем новый массив с автоматическими буферами
-    const bookingsWithAutoBuffers: Array<{ start: Date; end: Date }> = [];
+    const withAuto: Array<{ start: Date; end: Date }> = [];
 
     for (let i = 0; i < bookingsWithBuffers.length; i++) {
-      const currentBooking = bookingsWithBuffers[i];
-
-      // Добавляем текущее бронирование
-      bookingsWithAutoBuffers.push({
-        start: new Date(currentBooking.start),
-        end: new Date(currentBooking.end),
+      const current = bookingsWithBuffers[i];
+      withAuto.push({
+        start: new Date(current.start),
+        end: new Date(current.end),
       });
 
-      // Если есть следующее бронирование, добавляем автоматический буфер между ними
       if (i < bookingsWithBuffers.length - 1) {
-        const nextBooking = bookingsWithBuffers[i + 1];
-        const gap = getMinutesDifference(currentBooking.end, nextBooking.start);
+        const next = bookingsWithBuffers[i + 1];
+        const gap = getMinutesDifference(current.end, next.start);
 
-        // Если промежуток меньше автоматического буфера, расширяем текущее бронирование
         if (gap > 0 && gap < autoBufferMinutes) {
-          // Расширяем конец текущего бронирования
-          bookingsWithAutoBuffers[bookingsWithAutoBuffers.length - 1].end =
-            new Date(nextBooking.start.getTime());
-        } else if (gap >= autoBufferMinutes) {
-          // Добавляем автоматический буфер между бронированиями
-          const autoBufferStart = currentBooking.end;
-          const autoBufferEnd = addMinutesToUTC(
-            autoBufferStart,
-            autoBufferMinutes
-          );
+          // Расширяем текущий до начала следующего (но не через break)
+          // Если между current.end и next.start есть break -> не расширяем через break
+          const wouldStart = current.end;
+          const wouldEnd = next.start;
 
-          // Проверяем, что буфер не выходит за начало следующего бронирования
-          if (autoBufferEnd <= nextBooking.start) {
-            bookingsWithAutoBuffers.push({
-              start: autoBufferStart,
-              end: autoBufferEnd,
-            });
+          if (
+            breaksOverlapOnUTC(breaks, dateStr, timezone, wouldStart, wouldEnd)
+          ) {
+            // Есть break — не расширяем через break; оставляем gap как есть
+            // Ничего не делаем
           } else {
-            // Если буфер пересекается со следующим бронированием, расширяем текущее
-            bookingsWithAutoBuffers[bookingsWithAutoBuffers.length - 1].end =
-              new Date(nextBooking.start.getTime());
+            // Безопасно расширяем до начала следующего бронирования
+            withAuto[withAuto.length - 1].end = new Date(next.start.getTime());
+          }
+        } else if (gap >= autoBufferMinutes) {
+          // Пытаемся вставить авто-буфер, но проверяем пересечение с break
+          const autoStart = current.end;
+          const autoEnd = addMinutesToUTC(autoStart, autoBufferMinutes);
+
+          if (
+            !breaksOverlapOnUTC(
+              breaks,
+              dateStr,
+              timezone,
+              autoStart,
+              autoEnd
+            ) &&
+            autoEnd <= next.start
+          ) {
+            withAuto.push({ start: autoStart, end: autoEnd });
+          } else {
+            // Буфер пересекает break или следующий booking -> не вставляем буфер
+            // Можно оставить gap как есть
           }
         }
       }
     }
 
-    // Заменяем массив бронирований на версию с автоматическими буферами
+    // Заменяем
     bookingsWithBuffers.length = 0;
-    bookingsWithBuffers.push(...bookingsWithAutoBuffers);
-
-    // Пересортировываем после добавления автоматических буферов
+    bookingsWithBuffers.push(...withAuto);
     bookingsWithBuffers.sort((a, b) => a.start.getTime() - b.start.getTime());
   }
 
-  // Добавляем все бронирования с буферами в интервалы
+  // Добавляем в общий список
   intervals.push(...bookingsWithBuffers);
 
-  // Добавляем перерывы мастера
-  for (const breakItem of breaks) {
-    const breakStart = convertMasterTZToUTC(dateStr, breakItem.start, timezone);
-    const breakEnd = convertMasterTZToUTC(dateStr, breakItem.end, timezone);
-    intervals.push({ start: breakStart, end: breakEnd });
+  // 3) Перерывы мастера как busy-intervals (переводим в UTC)
+  for (const br of breaks) {
+    const brStart = convertMasterTZToUTC(dateStr, br.start, timezone);
+    const brEnd = convertMasterTZToUTC(dateStr, br.end, timezone);
+    intervals.push({ start: brStart, end: brEnd });
   }
 
-  // Сортируем по времени начала
+  // Сортируем и объединяем пересекающиеся
   intervals.sort((a, b) => a.start.getTime() - b.start.getTime());
 
-  // Объединяем пересекающиеся интервалы (включая перерывы и буферы)
   const merged: Array<{ start: Date; end: Date }> = [];
   for (const interval of intervals) {
     if (merged.length === 0) {
-      merged.push(interval);
+      merged.push({
+        start: new Date(interval.start),
+        end: new Date(interval.end),
+      });
     } else {
       const last = merged[merged.length - 1];
-      if (interval.start <= last.end) {
-        // Пересекаются или соприкасаются - объединяем
+      if (interval.start.getTime() <= last.end.getTime()) {
+        // Объединяем
         last.end = new Date(
           Math.max(last.end.getTime(), interval.end.getTime())
         );
       } else {
-        merged.push(interval);
+        merged.push({
+          start: new Date(interval.start),
+          end: new Date(interval.end),
+        });
       }
     }
   }
@@ -219,6 +293,7 @@ function mergeBusyIntervals(
 
 /**
  * Вычитает занятые интервалы из рабочего времени
+ * Улучшенная версия с более точной обработкой границ
  */
 function subtractBusyIntervals(
   workStart: Date,
@@ -226,38 +301,156 @@ function subtractBusyIntervals(
   busyIntervals: Array<{ start: Date; end: Date }>
 ): Array<{ start: Date; end: Date }> {
   const freeIntervals: Array<{ start: Date; end: Date }> = [];
-  let currentStart = workStart;
+  let currentStart = new Date(workStart.getTime());
 
   for (const busy of busyIntervals) {
-    // Если занятый интервал начинается после текущего начала
-    if (busy.start > currentStart) {
-      // Добавляем свободный интервал до начала занятого
-      freeIntervals.push({
-        start: currentStart,
-        end: new Date(Math.min(busy.start.getTime(), workEnd.getTime())),
-      });
+    if (busy.end.getTime() <= currentStart.getTime()) {
+      // Занятый интервал полностью до текущего старта — пропускаем
+      continue;
     }
-    // Обновляем текущее начало на конец занятого интервала
+
+    if (busy.start.getTime() > currentStart.getTime()) {
+      const freeEnd = new Date(
+        Math.min(busy.start.getTime(), workEnd.getTime())
+      );
+      if (freeEnd.getTime() > currentStart.getTime()) {
+        freeIntervals.push({
+          start: new Date(currentStart),
+          end: freeEnd,
+        });
+      }
+    }
+
+    // Сдвигаем текущий старт
     currentStart = new Date(
       Math.max(currentStart.getTime(), busy.end.getTime())
     );
 
-    // Если мы уже прошли конец рабочего дня
-    if (currentStart >= workEnd) {
+    if (currentStart.getTime() >= workEnd.getTime()) {
       break;
     }
   }
 
-  // Добавляем оставшийся свободный интервал до конца рабочего дня
-  if (currentStart < workEnd) {
-    freeIntervals.push({ start: currentStart, end: workEnd });
+  if (currentStart.getTime() < workEnd.getTime()) {
+    freeIntervals.push({
+      start: new Date(currentStart),
+      end: new Date(workEnd),
+    });
   }
 
   return freeIntervals;
 }
 
 /**
+ * Вспомогательная функция: генерация слотов для одного сервиса (используется в fallback)
+ */
+function generateSlotsForService(
+  dateStr: string,
+  svcTotalDuration: number,
+  masterSettings: MasterSettings,
+  existingBookings: ExistingBooking[],
+  servicesInfo: ServiceInfo[]
+): string[] {
+  const {
+    workIntervals,
+    breaks,
+    slotStepMinutes,
+    timezone,
+    minServiceDurationMinutes,
+  } = masterSettings;
+  const now = new Date();
+  const availableSlots: string[] = [];
+
+  // Если нет интервалов — пусто
+  if (!workIntervals || workIntervals.length === 0) return [];
+
+  // Конвертируем существующие busyIntervals
+  const busyIntervals = mergeBusyIntervals(
+    existingBookings,
+    breaks,
+    dateStr,
+    timezone,
+    masterSettings,
+    servicesInfo
+  );
+
+  for (const workInterval of workIntervals) {
+    const workStart = convertMasterTZToUTC(
+      dateStr,
+      workInterval.start,
+      timezone
+    );
+    const workEnd = convertMasterTZToUTC(dateStr, workInterval.end, timezone);
+
+    if (workEnd.getTime() <= now.getTime()) continue;
+
+    const freeIntervals = subtractBusyIntervals(
+      workStart,
+      workEnd,
+      busyIntervals
+    );
+
+    for (const freeInterval of freeIntervals) {
+      const freeStart = freeInterval.start;
+      const freeEnd = freeInterval.end;
+
+      const effectiveStart = new Date(
+        Math.max(freeStart.getTime(), now.getTime())
+      );
+      let slotStart = roundUpToSlotStep(effectiveStart, slotStepMinutes);
+
+      if (slotStart.getTime() < freeStart.getTime())
+        slotStart = roundUpToSlotStep(freeStart, slotStepMinutes);
+
+      if (slotStart.getTime() < now.getTime()) {
+        const roundedNow = roundUpToSlotStep(now, slotStepMinutes);
+        slotStart =
+          roundedNow.getTime() > freeStart.getTime()
+            ? roundedNow
+            : roundUpToSlotStep(freeStart, slotStepMinutes);
+      }
+
+      while (slotStart.getTime() < freeEnd.getTime()) {
+        if (slotStart.getTime() < freeStart.getTime()) {
+          slotStart = addMinutesToUTC(slotStart, slotStepMinutes);
+          continue;
+        }
+
+        const slotEnd = addMinutesToUTC(slotStart, svcTotalDuration);
+
+        if (slotEnd.getTime() > freeEnd.getTime()) break;
+
+        // Tail check: tail must be 0 or >= minServiceDurationMinutes
+        const tailDuration = getMinutesDifference(slotEnd, freeEnd);
+
+        if (tailDuration > 0 && tailDuration < minServiceDurationMinutes) {
+          slotStart = addMinutesToUTC(slotStart, slotStepMinutes);
+          continue;
+        }
+
+        // Overlap check
+        let overlap = false;
+        for (const busy of busyIntervals) {
+          if (intervalsOverlap(slotStart, slotEnd, busy.start, busy.end)) {
+            overlap = true;
+            break;
+          }
+        }
+
+        if (!overlap) availableSlots.push(slotStart.toISOString());
+
+        slotStart = addMinutesToUTC(slotStart, slotStepMinutes);
+      }
+    }
+  }
+
+  availableSlots.sort((a, b) => new Date(a).getTime() - new Date(b).getTime());
+  return availableSlots;
+}
+
+/**
  * Вычисляет доступные временные слоты
+ * Улучшенная версия с fallback по услугам и компрессией слотов
  *
  * @param date - Дата в формате YYYY-MM-DD
  * @param serviceIds - Массив ID услуг (для расчета максимальной длительности)
@@ -280,16 +473,14 @@ export function calculateAvailableSlots(
     slotStepMinutes,
     minServiceDurationMinutes,
     timezone,
+    slotCompression,
   } = masterSettings;
 
-  // Если нет рабочих интервалов, возвращаем пустой массив
-  if (workIntervals.length === 0) {
-    return [];
-  }
+  if (!workIntervals || workIntervals.length === 0) return [];
 
-  // Вычисляем максимальную длительность услуги + буфер
+  // Вычисляем maxServiceDuration и maxTotalDuration для переданных serviceIds
   let maxServiceDuration = 0;
-  let maxTotalDuration = 0; // длительность + буфер
+  let maxTotalDuration = 0;
 
   for (const serviceId of serviceIds) {
     const service = servicesInfo.find(s => s.id === serviceId);
@@ -301,99 +492,78 @@ export function calculateAvailableSlots(
     }
   }
 
-  // Если услуги не найдены, используем минимальные значения
+  // Если не заданы конкретные services (например, список пуст) — берем conservative defaults
   if (maxTotalDuration === 0) {
     maxServiceDuration = minServiceDurationMinutes;
     maxTotalDuration = maxServiceDuration + serviceBufferMinutes;
   }
 
+  const busyIntervals = mergeBusyIntervals(
+    existingBookings,
+    breaks,
+    date,
+    timezone,
+    masterSettings,
+    servicesInfo
+  );
+
   const availableSlots: string[] = [];
   const now = new Date();
 
-  // Обрабатываем каждый рабочий интервал
   for (const workInterval of workIntervals) {
     const workStart = convertMasterTZToUTC(date, workInterval.start, timezone);
     const workEnd = convertMasterTZToUTC(date, workInterval.end, timezone);
 
-    // Если рабочий интервал в прошлом, пропускаем
-    if (workEnd <= now) {
-      continue;
-    }
+    if (workEnd.getTime() <= now.getTime()) continue;
 
-    // Объединяем занятые интервалы (bookings + breaks + auto buffers)
-    const busyIntervals = mergeBusyIntervals(
-      existingBookings,
-      breaks,
-      date,
-      timezone,
-      masterSettings,
-      servicesInfo
-    );
-
-    // Вычитаем занятые интервалы из рабочего времени
     const freeIntervals = subtractBusyIntervals(
       workStart,
       workEnd,
       busyIntervals
     );
 
-    // Генерируем слоты для каждого свободного интервала
     for (const freeInterval of freeIntervals) {
       const freeStart = freeInterval.start;
       const freeEnd = freeInterval.end;
 
-      // Начинаем генерацию с начала свободного интервала или текущего времени (что больше)
       const effectiveStart = new Date(
         Math.max(freeStart.getTime(), now.getTime())
       );
-
-      // Округляем вверх до ближайшего шага слота
       let slotStart = roundUpToSlotStep(effectiveStart, slotStepMinutes);
 
-      // Убеждаемся, что слот не раньше начала свободного интервала
-      if (slotStart < freeStart) {
+      if (slotStart.getTime() < freeStart.getTime())
         slotStart = roundUpToSlotStep(freeStart, slotStepMinutes);
-      }
 
-      // Убеждаемся, что слот не в прошлом
-      if (slotStart < now) {
+      if (slotStart.getTime() < now.getTime()) {
         const roundedNow = roundUpToSlotStep(now, slotStepMinutes);
-        // Используем максимум из округленного текущего времени и начала свободного интервала
         slotStart =
-          roundedNow > freeStart
+          roundedNow.getTime() > freeStart.getTime()
             ? roundedNow
             : roundUpToSlotStep(freeStart, slotStepMinutes);
       }
 
-      // Генерируем слоты с шагом slotStepMinutes
-      while (slotStart < freeEnd) {
-        // Проверяем, что слот не начинается раньше начала свободного интервала
-        if (slotStart < freeStart) {
+      while (slotStart.getTime() < freeEnd.getTime()) {
+        if (slotStart.getTime() < freeStart.getTime()) {
           slotStart = addMinutesToUTC(slotStart, slotStepMinutes);
           continue;
         }
 
-        // Вычисляем конец слота (начало + длительность + буфер)
+        // Конец слота = начало + maxTotalDuration (учитываем выбранные услуги)
         const slotEnd = addMinutesToUTC(slotStart, maxTotalDuration);
 
-        // Проверяем, что весь слот помещается в свободный интервал
-        if (slotEnd > freeEnd) {
-          break; // Больше слотов не поместится
+        if (slotEnd.getTime() > freeEnd.getTime()) {
+          break;
         }
 
-        // Анти-простой: проверяем хвост после слота
-        const tailStart = slotEnd;
-        const tailEnd = freeEnd;
-        const tailDuration = getMinutesDifference(tailStart, tailEnd);
+        // Улучшенная проверка хвоста: сравниваем с maxServiceDuration (более корректно)
+        const tailDuration = getMinutesDifference(slotEnd, freeEnd);
 
-        // Разрешаем пустые хвосты только == 0 или >= минимальной услуги
-        if (tailDuration > 0 && tailDuration < minServiceDurationMinutes) {
-          // Хвост слишком маленький - пропускаем этот слот
+        if (tailDuration > 0 && tailDuration < maxServiceDuration) {
           slotStart = addMinutesToUTC(slotStart, slotStepMinutes);
           continue;
         }
 
-        // Проверяем, что слот не пересекается с занятыми интервалами
+        // Проверяем пересечение с busyIntervals
         let isOverlapping = false;
         for (const busy of busyIntervals) {
           if (intervalsOverlap(slotStart, slotEnd, busy.start, busy.end)) {
@@ -403,18 +573,55 @@ export function calculateAvailableSlots(
         }
 
         if (!isOverlapping) {
-          // Слот доступен
           availableSlots.push(slotStart.toISOString());
         }
 
-        // Переходим к следующему слоту
         slotStart = addMinutesToUTC(slotStart, slotStepMinutes);
       }
     }
   }
 
-  // Сортируем слоты по времени
+  // Сортируем
   availableSlots.sort((a, b) => new Date(a).getTime() - new Date(b).getTime());
+
+  // Если не найдено слотов для набора услуг, пробуем fallback: слоты по отдельным услугам
+  if (availableSlots.length === 0 && servicesInfo && servicesInfo.length > 0) {
+    const alternativePerService: Record<string, string[]> = {};
+
+    for (const svc of servicesInfo) {
+      const buf = svc.bufferMinutes ?? serviceBufferMinutes;
+      const svcTotal = svc.durationMin + buf;
+      const svcSlots = generateSlotsForService(
+        date,
+        svcTotal,
+        masterSettings,
+        existingBookings,
+        servicesInfo
+      );
+
+      if (svcSlots.length > 0) {
+        alternativePerService[svc.id] = svcSlots;
+      }
+    }
+
+    // Если есть альтернативы — отдаём альтернативные слоты для одной из услуг
+    const firstAltServiceId = Object.keys(alternativePerService)[0];
+    if (firstAltServiceId) {
+      const alt = alternativePerService[firstAltServiceId];
+      if (alt && alt.length > 0) {
+        // Применим компрессию если включена
+        const finalAlt = slotCompression
+          ? compressSlots(alt, slotStepMinutes)
+          : alt;
+        return finalAlt;
+      }
+    }
+  }
+
+  // Применяем компрессию слотов, если включена
+  if (slotCompression) {
+    return compressSlots(availableSlots, slotStepMinutes);
+  }
 
   return availableSlots;
 }
@@ -635,6 +842,10 @@ export function getMasterDailySchedule(
   // Пока используем значение по умолчанию false
   const autoBuffer = false;
 
+  // TODO: Получить slotCompression из настроек мастера в БД
+  // Пока используем значение по умолчанию false
+  const slotCompression = false;
+
   return {
     workIntervals,
     breaks,
@@ -643,6 +854,7 @@ export function getMasterDailySchedule(
     minServiceDurationMinutes,
     timezone,
     autoBuffer,
+    slotCompression,
   };
 }
 
