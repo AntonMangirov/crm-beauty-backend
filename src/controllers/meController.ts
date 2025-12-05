@@ -360,7 +360,8 @@ export async function getAppointments(req: Request, res: Response) {
       // Период для привязки фото: от начала дня следующей записи этого клиента до начала дня текущей записи
       // ВАЖНО: так как записи отсортированы DESC, следующая запись имеет более раннюю дату
       // Поэтому период должен быть: [nextAppointmentDate, appointmentDate]
-      // Если следующей записи нет, используем начало дня текущей записи как нижнюю границу и текущую дату как верхнюю
+      // Если следующей записи нет (самая старая запись), используем конец дня текущей записи как верхнюю границу
+      // чтобы избежать перекрытия с более новыми записями
       let periodStart: Date;
       let periodEnd: Date;
       if (nextAppointment) {
@@ -368,9 +369,11 @@ export async function getAppointments(req: Request, res: Response) {
         periodStart.setHours(0, 0, 0, 0);
         periodEnd = appointmentDate;
       } else {
-        // Если следующей записи нет, используем начало дня текущей записи как нижнюю границу
+        // Если следующей записи нет (самая старая запись), используем начало дня как нижнюю границу
+        // и конец дня как верхнюю границу, чтобы не перекрываться с более новыми записями
         periodStart = appointmentDate;
-        periodEnd = new Date(); // Текущая дата как верхняя граница
+        periodEnd = new Date(appointmentDate);
+        periodEnd.setHours(23, 59, 59, 999); // Конец дня записи
       }
 
       const relatedPhotos = allPhotos
@@ -1195,7 +1198,9 @@ export async function getClientHistory(req: Request, res: Response) {
 
       const nextAppointment = appointments[index + 1];
       // Период для привязки фото: от начала дня следующей записи до начала дня текущей записи
-      // Если следующей записи нет, используем начало дня текущей записи как нижнюю границу и текущую дату как верхнюю
+      // ВАЖНО: записи отсортированы по startAt DESC, поэтому следующая запись имеет более раннюю дату
+      // Если следующей записи нет (самая старая запись), используем конец дня текущей записи как верхнюю границу
+      // чтобы избежать перекрытия с более новыми записями
       let periodStart: Date;
       let periodEnd: Date;
       if (nextAppointment) {
@@ -1203,8 +1208,11 @@ export async function getClientHistory(req: Request, res: Response) {
         periodStart.setHours(0, 0, 0, 0);
         periodEnd = appointmentDate;
       } else {
+        // Если следующей записи нет (самая старая запись), используем начало дня как нижнюю границу
+        // и конец дня как верхнюю границу, чтобы не перекрываться с более новыми записями
         periodStart = appointmentDate;
-        periodEnd = new Date();
+        periodEnd = new Date(appointmentDate);
+        periodEnd.setHours(23, 59, 59, 999); // Конец дня записи
       }
 
       const relatedPhotos = allPhotos
