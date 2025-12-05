@@ -45,6 +45,8 @@ if (uploadMode === 'local' || !hasCloudinary) {
 }
 
 // CORS должен быть применен ПЕРВЫМ, до всех других middleware
+// Применяем глобальный CORS для всех запросов (включая ошибки)
+app.use(corsConfig);
 app.use(corsLogger);
 
 app.use(securityHeaders);

@@ -23,3 +23,6 @@
 - [Инструкции по миграциям](./migrations/MIGRATION_INSTRUCTIONS.md)
 - [Настройки расписания мастера](./migrations/MIGRATION_MASTER_SCHEDULE_SETTINGS.md)
 
+
+
+

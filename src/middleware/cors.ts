@@ -129,3 +129,39 @@ export const corsLogger = (req: Request, res: Response, next: any) => {
   }
   next();
 };
+
+/**
+ * Добавляет CORS заголовки в ответ
+ * Используется в error handlers для гарантии наличия CORS заголовков даже при ошибках
+ */
+export const addCorsHeaders = (req: Request, res: Response): void => {
+  const origin = req.headers.origin;
+
+  // Проверяем, разрешен ли origin
+  if (origin) {
+    const isDevelopment = process.env.NODE_ENV !== 'production';
+    const allowedList = isDevelopment
+      ? [...allowedOrigins, ...devOrigins]
+      : allowedOrigins;
+
+    if (allowedList.includes(origin)) {
+      res.setHeader('Access-Control-Allow-Origin', origin);
+      res.setHeader('Access-Control-Allow-Credentials', 'true');
+    }
+  } else if (
+    process.env.NODE_ENV === 'development' ||
+    process.env.NODE_ENV === 'test'
+  ) {
+    // В dev/test окружении разрешаем запросы без origin
+    res.setHeader('Access-Control-Allow-Origin', '*');
+  }
+
+  res.setHeader(
+    'Access-Control-Allow-Methods',
+    'GET, POST, PUT, DELETE, PATCH, OPTIONS'
+  );
+  res.setHeader(
+    'Access-Control-Allow-Headers',
+    'Origin, X-Requested-With, Content-Type, Accept, Authorization, Cache-Control, Pragma'
+  );
+};

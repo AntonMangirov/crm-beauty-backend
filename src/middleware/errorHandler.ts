@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 import { ZodError } from 'zod';
 import { AppError } from '../errors/AppError';
 import { logError } from '../utils/logger';
+import { addCorsHeaders } from './cors';
 
 interface ErrorResponse {
   error: string;
@@ -101,6 +102,8 @@ export const errorHandler = (
     path: req.path,
   };
 
+  // Добавляем CORS заголовки перед отправкой ответа об ошибке
+  addCorsHeaders(req, res);
   res.status(statusCode).json(errorResponse);
 };
 
@@ -171,6 +174,8 @@ export const unhandledErrorHandler = (
     path: req.path,
   };
 
+  // Добавляем CORS заголовки перед отправкой ответа об ошибке
+  addCorsHeaders(req, res);
   res.status(500).json(errorResponse);
 };
 
@@ -186,5 +191,7 @@ export const notFoundHandler = (req: Request, res: Response): void => {
     timezone: 'UTC',
   };
 
+  // Добавляем CORS заголовки перед отправкой ответа 404
+  addCorsHeaders(req, res);
   res.status(404).json(errorResponse);
 };
