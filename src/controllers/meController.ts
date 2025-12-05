@@ -357,14 +357,20 @@ export async function getAppointments(req: Request, res: Response) {
         return nextAppointmentDate < appointmentDate;
       });
 
-      // Период для привязки фото: от начала дня записи до начала дня следующей записи этого клиента
-      // Если следующей записи нет, используем текущую дату
+      // Период для привязки фото: от начала дня следующей записи этого клиента до начала дня текущей записи
+      // ВАЖНО: так как записи отсортированы DESC, следующая запись имеет более раннюю дату
+      // Поэтому период должен быть: [nextAppointmentDate, appointmentDate]
+      // Если следующей записи нет, используем начало дня текущей записи как нижнюю границу и текущую дату как верхнюю
+      let periodStart: Date;
       let periodEnd: Date;
       if (nextAppointment) {
-        periodEnd = new Date(nextAppointment.startAt);
-        periodEnd.setHours(0, 0, 0, 0);
+        periodStart = new Date(nextAppointment.startAt);
+        periodStart.setHours(0, 0, 0, 0);
+        periodEnd = appointmentDate;
       } else {
-        periodEnd = new Date();
+        // Если следующей записи нет, используем начало дня текущей записи как нижнюю границу
+        periodStart = appointmentDate;
+        periodEnd = new Date(); // Текущая дата как верхняя граница
       }
 
       const relatedPhotos = allPhotos
@@ -374,12 +380,13 @@ export async function getAppointments(req: Request, res: Response) {
             return true;
           }
           // Fallback: привязка по дате для фото без appointmentId
-          // Фото должно быть создано между началом дня записи и началом дня следующей записи этого клиента
+          // Фото должно быть создано между началом дня следующей записи и началом дня текущей записи
+          // (включительно с обеих сторон)
           if (!photo.appointmentId) {
             const photoDate = new Date(photo.createdAt);
             return (
               photo.clientId === appointment.clientId &&
-              photoDate >= appointmentDate &&
+              photoDate >= periodStart &&
               photoDate <= periodEnd
             );
           }
@@ -1181,14 +1188,24 @@ export async function getClientHistory(req: Request, res: Response) {
     // Привязываем фото к записям:
     // 1. Сначала по appointmentId (если фото привязано к конкретной записи)
     // 2. Затем по дате создания (fallback для старых фото без appointmentId)
+    // ВАЖНО: записи отсортированы по startAt DESC, поэтому следующая запись имеет более раннюю дату
     const historyItems = appointments.map((appointment, index) => {
       const appointmentDate = new Date(appointment.startAt);
       appointmentDate.setHours(0, 0, 0, 0);
 
       const nextAppointment = appointments[index + 1];
-      const periodEnd = nextAppointment
-        ? new Date(nextAppointment.startAt)
-        : new Date();
+      // Период для привязки фото: от начала дня следующей записи до начала дня текущей записи
+      // Если следующей записи нет, используем начало дня текущей записи как нижнюю границу и текущую дату как верхнюю
+      let periodStart: Date;
+      let periodEnd: Date;
+      if (nextAppointment) {
+        periodStart = new Date(nextAppointment.startAt);
+        periodStart.setHours(0, 0, 0, 0);
+        periodEnd = appointmentDate;
+      } else {
+        periodStart = appointmentDate;
+        periodEnd = new Date();
+      }
 
       const relatedPhotos = allPhotos
         .filter(photo => {
@@ -1197,9 +1214,10 @@ export async function getClientHistory(req: Request, res: Response) {
             return true;
           }
           // Fallback: привязка по дате для фото без appointmentId
+          // Фото должно быть создано между началом дня следующей записи и началом дня текущей записи
           if (!photo.appointmentId) {
             const photoDate = new Date(photo.createdAt);
-            return photoDate >= appointmentDate && photoDate <= periodEnd;
+            return photoDate >= periodStart && photoDate <= periodEnd;
           }
           return false;
         })
